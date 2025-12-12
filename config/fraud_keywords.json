@@ -1,0 +1,167 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "S.A.F.A Fraud Detection Keywords",
+  "version": "10.0",
+  "description": "Mots-clés et patterns pour la détection de fraudes",
+
+  "keywords": {
+    "high_risk": {
+      "description": "Mots-clés à haut risque - alerte immédiate",
+      "severity": "FRAUD",
+      "terms": [
+        "CADEAU",
+        "GIFT",
+        "GRATIFICATION",
+        "BAKCHICH",
+        "POT DE VIN",
+        "COMMISSION OCCULTE",
+        "DESSOUS DE TABLE"
+      ]
+    },
+
+    "medium_risk": {
+      "description": "Mots-clés à risque moyen - investigation requise",
+      "severity": "HIGH",
+      "terms": [
+        "URGENT",
+        "EMERGENCY",
+        "MANUEL",
+        "MANUAL",
+        "EXCEPTION",
+        "OVERRIDE",
+        "BYPASS",
+        "SPECIAL",
+        "VIP",
+        "DIRECTEUR",
+        "CEO",
+        "PDG",
+        "PATRON"
+      ]
+    },
+
+    "correction_patterns": {
+      "description": "Patterns liés aux corrections - vérification nécessaire",
+      "severity": "MEDIUM",
+      "terms": [
+        "CORRECTION",
+        "AJUSTEMENT",
+        "ADJUSTMENT",
+        "ANNULATION",
+        "CANCEL",
+        "VOID",
+        "REVERSE",
+        "REVERSAL",
+        "EXTOURNE",
+        "CONTRE-PASSATION",
+        "ERREUR",
+        "ERROR"
+      ]
+    },
+
+    "cash_patterns": {
+      "description": "Patterns liés aux espèces - risque LAB/FT",
+      "severity": "COMPLIANCE",
+      "terms": [
+        "CASH",
+        "ESPECES",
+        "LIQUIDE",
+        "NUMERAIRE",
+        "BILLETS",
+        "RETRAIT IMPORTANT",
+        "DEPOT ESPECES"
+      ]
+    },
+
+    "related_party": {
+      "description": "Transactions avec parties liées",
+      "severity": "MEDIUM",
+      "terms": [
+        "INTRAGROUPE",
+        "INTERCOMPANY",
+        "FILIALE",
+        "MAISON MERE",
+        "ACTIONNAIRE",
+        "ADMINISTRATEUR",
+        "DIRIGEANT"
+      ]
+    }
+  },
+
+  "exclusion_patterns": {
+    "description": "Termes qui annulent le risque si présents",
+    "terms": [
+      "AUTO",
+      "AUTOMATIQUE",
+      "SYSTEM",
+      "BATCH",
+      "SCHEDULED",
+      "PROGRAMMÉ"
+    ]
+  },
+
+  "account_name_flags": {
+    "sensitive_accounts": {
+      "description": "Comptes nécessitant une attention particulière",
+      "patterns": [
+        "CAISSE",
+        "COFFRE",
+        "CASH",
+        "VAULT",
+        "TRESOR",
+        "SUSPENS",
+        "SUSPENSE",
+        "TRANSIT",
+        "PASSAGE",
+        "CLEARING",
+        "ATTENTE"
+      ]
+    },
+
+    "non_proofable": {
+      "description": "Comptes à exclure du rapprochement",
+      "patterns": [
+        "ISO",
+        "NOSTRO",
+        "VOSTRO",
+        "LORO",
+        "MIROIR"
+      ]
+    }
+  },
+
+  "amount_patterns": {
+    "round_numbers": {
+      "description": "Montants ronds suspects",
+      "thresholds": [100000, 500000, 1000000, 5000000, 10000000]
+    },
+    "just_below_threshold": {
+      "description": "Juste sous les seuils réglementaires",
+      "thresholds": [
+        {"limit": 5000000, "min_ratio": 0.90, "regulation": "LAB/FT"},
+        {"limit": 1000000, "min_ratio": 0.90, "regulation": "Internal"},
+        {"limit": 500000, "min_ratio": 0.90, "regulation": "Approval"}
+      ]
+    }
+  },
+
+  "temporal_patterns": {
+    "suspicious_timing": {
+      "weekend": {
+        "enabled": true,
+        "threshold_amount": 50000
+      },
+      "end_of_month": {
+        "enabled": true,
+        "days": [28, 29, 30, 31, 1, 2]
+      },
+      "end_of_quarter": {
+        "enabled": true,
+        "months": [3, 6, 9, 12]
+      },
+      "holidays": {
+        "enabled": true,
+        "dates": []
+      }
+    }
+  }
+}
