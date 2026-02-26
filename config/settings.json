@@ -1,0 +1,133 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "S.A.F.A Configuration",
+  "version": "10.0",
+  "description": "Configuration principale de S.A.F.A (System for Automated Financial Audit)",
+
+  "general": {
+    "application_name": "S.A.F.A",
+    "version": "10.0",
+    "default_currency": "XAF",
+    "default_tolerance": 100,
+    "max_rows_memory": 500000,
+    "default_sol_id": "799"
+  },
+
+  "currencies": {
+    "supported": ["XAF", "EUR", "USD", "GBP", "XOF", "NGN", "GHS", "KES", "ZAR"],
+    "default": "XAF",
+    "exchange_rates": {
+      "XAF_EUR": 655.957,
+      "XAF_USD": 600.00,
+      "XOF_EUR": 655.957
+    }
+  },
+
+  "forensic": {
+    "benford": {
+      "chi_squared_critical_value": 15.51,
+      "mad_threshold_excellent": 0.006,
+      "mad_threshold_acceptable": 0.012,
+      "mad_threshold_marginal": 0.015,
+      "min_sample_size": 100
+    },
+    "z_score": {
+      "threshold_warning": 2.5,
+      "threshold_critical": 3.5,
+      "min_transactions": 5
+    },
+    "structuring": {
+      "threshold_amount": 50000,
+      "min_count": 3,
+      "time_window_days": 1
+    },
+    "layering": {
+      "threshold_amount": 1000000,
+      "min_count": 4
+    },
+    "weekend_analysis": {
+      "threshold_amount": 50000
+    }
+  },
+
+  "risk_scoring": {
+    "weights": {
+      "amount_factor": 30,
+      "age_factor": 30,
+      "orphan_factor": 20,
+      "volume_factor": 10,
+      "sensitivity_factor": 10
+    },
+    "thresholds": {
+      "critical": 70,
+      "high": 50,
+      "medium": 30,
+      "low": 0
+    },
+    "amount_brackets": {
+      "tier1": 10000000,
+      "tier2": 1000000,
+      "tier3": 100000
+    },
+    "age_brackets_days": {
+      "tier1": 365,
+      "tier2": 180,
+      "tier3": 90
+    }
+  },
+
+  "regulatory": {
+    "cobac": {
+      "suspens_limit_days": 90,
+      "transit_limit_days": 7
+    },
+    "beac": {
+      "reserve_ratio": 0.07
+    },
+    "lab_ft": {
+      "declaration_threshold_xaf": 5000000,
+      "structuring_threshold_xaf": 4500000
+    },
+    "prudential": {
+      "large_exposure_ratio": 0.25
+    }
+  },
+
+  "ifrs9": {
+    "provision_rates": {
+      "stage3_days": 360,
+      "stage3_rate": 1.0,
+      "stage2_high_days": 180,
+      "stage2_high_rate": 0.5,
+      "stage2_low_days": 90,
+      "stage2_low_rate": 0.25,
+      "stage1_high_days": 30,
+      "stage1_high_rate": 0.1,
+      "stage1_low_rate": 0.01
+    }
+  },
+
+  "audit_trail": {
+    "enabled": true,
+    "log_level": "INFO",
+    "hash_algorithm": "simple",
+    "retention_days": 365
+  },
+
+  "ui": {
+    "default_zoom": 85,
+    "colors": {
+      "success": "#00C000",
+      "warning": "#FF8000",
+      "error": "#FF0000",
+      "primary": "#003366",
+      "neutral": "#808080"
+    }
+  },
+
+  "export": {
+    "formats": ["xlsx", "pdf", "csv"],
+    "default_format": "xlsx",
+    "include_charts": true
+  }
+}
