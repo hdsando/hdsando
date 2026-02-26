@@ -106,16 +106,8 @@ Public Sub GenerateExecutiveSummary(wb As Workbook)
     Dim wsAudit As Worksheet
     Dim rowNum As Long
 
-    ' Supprimer si existe
-    On Error Resume Next
-    Application.DisplayAlerts = False
-    wb.Sheets("EXECUTIVE_SUMMARY").Delete
-    Application.DisplayAlerts = True
-    On Error GoTo ErrorHandler
-
-    ' Creer la feuille
-    Set ws = wb.Sheets.Add(After:=wb.Sheets(wb.Sheets.Count))
-    ws.Name = "EXECUTIVE_SUMMARY"
+    ' CORRIGÉ BUG-003: Utiliser GetOrCreateSheet pour éviter conflits
+    Set ws = Core_Engine.GetOrCreateSheet("EXECUTIVE_SUMMARY", True)
 
     ' Recuperer les donnees sources
     On Error Resume Next
@@ -292,16 +284,8 @@ Public Sub GenerateRiskDashboard(wb As Workbook)
     Dim rowNum As Long
     Dim chartObj As ChartObject
 
-    ' Supprimer si existe
-    On Error Resume Next
-    Application.DisplayAlerts = False
-    wb.Sheets("DASHBOARD_RISQUE").Delete
-    Application.DisplayAlerts = True
-    On Error GoTo ErrorHandler
-
-    ' Creer la feuille
-    Set ws = wb.Sheets.Add(After:=wb.Sheets(wb.Sheets.Count))
-    ws.Name = "DASHBOARD_RISQUE"
+    ' CORRIGÉ BUG-003: Utiliser GetOrCreateSheet pour éviter conflits
+    Set ws = Core_Engine.GetOrCreateSheet("DASHBOARD_RISQUE", True)
 
     Set wsReconcil = Nothing
     On Error Resume Next
@@ -339,10 +323,14 @@ Public Sub GenerateRiskDashboard(wb As Workbook)
 
         If Not wsReconcil Is Nothing Then
             On Error Resume Next
-            critCount = Application.WorksheetFunction.CountIf(wsReconcil.Columns("K"), "CRITICAL")
-            highCount = Application.WorksheetFunction.CountIf(wsReconcil.Columns("K"), "HIGH")
-            medCount = Application.WorksheetFunction.CountIf(wsReconcil.Columns("K"), "MEDIUM")
-            lowCount = Application.WorksheetFunction.CountIf(wsReconcil.Columns("K"), "LOW")
+            ' CORRIGÉ BUG-004: La colonne Priority est en N (col 14), pas en K
+            ' Structure RECONCIL: A=Compte, B=Libelle, C=Balance, D=GL, E=Ecart, F=Status,
+            '                     G=Anciennete, H=NbTrans, I=DateMin, J=DateMax, K=Score,
+            '                     L=Facteurs, M=Provisions, N=Priority
+            critCount = Application.WorksheetFunction.CountIf(wsReconcil.Columns("N"), "CRITICAL")
+            highCount = Application.WorksheetFunction.CountIf(wsReconcil.Columns("N"), "HIGH")
+            medCount = Application.WorksheetFunction.CountIf(wsReconcil.Columns("N"), "MEDIUM")
+            lowCount = Application.WorksheetFunction.CountIf(wsReconcil.Columns("N"), "LOW")
             totalCount = critCount + highCount + medCount + lowCount
             On Error GoTo ErrorHandler
         End If
@@ -522,15 +510,8 @@ Public Sub GenerateForensicReport(wb As Workbook)
     Dim ws As Worksheet
     Dim rowNum As Long
 
-    ' Supprimer si existe
-    On Error Resume Next
-    Application.DisplayAlerts = False
-    wb.Sheets("FORENSIC_ANALYSIS").Delete
-    Application.DisplayAlerts = True
-    On Error GoTo ErrorHandler
-
-    Set ws = wb.Sheets.Add(After:=wb.Sheets(wb.Sheets.Count))
-    ws.Name = "FORENSIC_ANALYSIS"
+    ' CORRIGÉ BUG-003: Utiliser GetOrCreateSheet pour éviter conflits
+    Set ws = Core_Engine.GetOrCreateSheet("FORENSIC_ANALYSIS", True)
 
     rowNum = 1
 
@@ -663,15 +644,8 @@ Public Sub GenerateComplianceReport(wb As Workbook)
     Dim ws As Worksheet
     Dim rowNum As Long
 
-    ' Supprimer si existe
-    On Error Resume Next
-    Application.DisplayAlerts = False
-    wb.Sheets("COMPLIANCE_CHECK").Delete
-    Application.DisplayAlerts = True
-    On Error GoTo ErrorHandler
-
-    Set ws = wb.Sheets.Add(After:=wb.Sheets(wb.Sheets.Count))
-    ws.Name = "COMPLIANCE_CHECK"
+    ' CORRIGÉ BUG-003: Utiliser GetOrCreateSheet pour éviter conflits
+    Set ws = Core_Engine.GetOrCreateSheet("COMPLIANCE_CHECK", True)
 
     rowNum = 1
 
@@ -969,15 +943,8 @@ Public Sub GenerateSampleSheet(wb As Workbook)
     Dim rowNum As Long
     Dim i As Long
 
-    ' Supprimer si existe
-    On Error Resume Next
-    Application.DisplayAlerts = False
-    wb.Sheets("ECHANTILLON_TEST").Delete
-    Application.DisplayAlerts = True
-    On Error GoTo ErrorHandler
-
-    Set ws = wb.Sheets.Add(After:=wb.Sheets(wb.Sheets.Count))
-    ws.Name = "ECHANTILLON_TEST"
+    ' CORRIGÉ BUG-003: Utiliser GetOrCreateSheet pour éviter conflits
+    Set ws = Core_Engine.GetOrCreateSheet("ECHANTILLON_TEST", True)
 
     On Error Resume Next
     Set wsReconcil = wb.Sheets("RECONCIL")
@@ -1024,20 +991,24 @@ Public Sub GenerateSampleSheet(wb As Workbook)
                 If copyCount >= 20 Then Exit For
 
                 ' Verifier si la ligne a un score
-                If wsReconcil.Cells(i, 11).Value <> "" Then
+                ' CORRIGÉ BUG-005: Colonnes correctes selon structure RECONCIL
+                ' Structure: A(1)=Compte, B(2)=Libelle, C(3)=Balance, D(4)=GL, E(5)=Ecart,
+                '            F(6)=Status, G(7)=Anciennete, H(8)=NbTrans, I(9)=DateMin,
+                '            J(10)=DateMax, K(11)=Score, L(12)=Facteurs, M(13)=Provisions, N(14)=Priority
+                If wsReconcil.Cells(i, 11).Value <> "" Then ' Score non vide
                     copyCount = copyCount + 1
                     .Cells(rowNum, 1).Value = copyCount
-                    .Cells(rowNum, 2).Value = wsReconcil.Cells(i, 1).Value ' Compte
-                    .Cells(rowNum, 3).Value = wsReconcil.Cells(i, 2).Value ' Libelle
-                    .Cells(rowNum, 4).Value = wsReconcil.Cells(i, 9).Value ' Ecart
+                    .Cells(rowNum, 2).Value = wsReconcil.Cells(i, 1).Value ' Compte (col A)
+                    .Cells(rowNum, 3).Value = wsReconcil.Cells(i, 2).Value ' Libelle (col B)
+                    .Cells(rowNum, 4).Value = wsReconcil.Cells(i, 5).Value ' Ecart (col E)
                     .Cells(rowNum, 4).NumberFormat = "#,##0"
-                    .Cells(rowNum, 5).Value = wsReconcil.Cells(i, 10).Value ' Score
-                    .Cells(rowNum, 6).Value = wsReconcil.Cells(i, 11).Value ' Niveau
-                    .Cells(rowNum, 7).Value = wsReconcil.Cells(i, 12).Value ' Facteurs
+                    .Cells(rowNum, 5).Value = wsReconcil.Cells(i, 11).Value ' Score (col K)
+                    .Cells(rowNum, 6).Value = wsReconcil.Cells(i, 14).Value ' Priority/Niveau (col N)
+                    .Cells(rowNum, 7).Value = wsReconcil.Cells(i, 12).Value ' Facteurs (col L)
                     .Cells(rowNum, 8).Value = "A INVESTIGUER"
 
-                    ' Colorer selon niveau
-                    Select Case wsReconcil.Cells(i, 11).Value
+                    ' Colorer selon niveau de priorité
+                    Select Case wsReconcil.Cells(i, 14).Value ' Priority (col N)
                         Case "CRITICAL"
                             .Range(.Cells(rowNum, 1), .Cells(rowNum, 10)).Interior.Color = RGB(255, 200, 200)
                         Case "HIGH"

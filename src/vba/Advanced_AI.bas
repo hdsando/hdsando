@@ -411,23 +411,11 @@ Public Sub Finaliser_Rapport()
     Set wsR = ThisWorkbook.Worksheets("RECONCIL")
     lr = wsR.Cells(wsR.Rows.count, 1).End(xlUp).Row
 
-    ' Supprimer anciennes feuilles
-    Application.DisplayAlerts = False
-    On Error Resume Next
-    ThisWorkbook.Sheets("DASHBOARD_RISQUE").Delete
-    ThisWorkbook.Sheets("ECHANTILLON_TEST").Delete
-    ThisWorkbook.Sheets("EXECUTIVE_SUMMARY").Delete
-    On Error GoTo RapportError
-    Application.DisplayAlerts = True
-
-    Set wsD = ThisWorkbook.Worksheets.Add
-    wsD.name = "DASHBOARD_RISQUE"
-
-    Set wsS = ThisWorkbook.Worksheets.Add
-    wsS.name = "ECHANTILLON_TEST"
-
-    Set wsExec = ThisWorkbook.Worksheets.Add
-    wsExec.name = "EXECUTIVE_SUMMARY"
+    ' CORRIGÉ BUG-003: Utiliser GetOrCreateSheet pour éviter conflits
+    ' avec Report_Generator qui crée les mêmes feuilles
+    Set wsD = Core_Engine.GetOrCreateSheet("DASHBOARD_RISQUE", True)
+    Set wsS = Core_Engine.GetOrCreateSheet("ECHANTILLON_TEST", True)
+    Set wsExec = Core_Engine.GetOrCreateSheet("EXECUTIVE_SUMMARY", True)
 
     ' ═══════════════════════════════════════════════════════════════
     ' 1. CALCUL PROVISIONS IFRS 9

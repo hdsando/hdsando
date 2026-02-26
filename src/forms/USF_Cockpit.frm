@@ -44,10 +44,20 @@ Private Sub UserForm_Initialize()
     ' Configuration initiale du formulaire
     On Error Resume Next
 
-    ' Titre avec version
-    Me.Caption = "S.A.F.A v" & Core_Engine.SAFA_VERSION & " - Cockpit de Pilotage"
+    ' INTÉGRATION Config_Manager: Charger la configuration au démarrage
+    Dim configLoaded As Boolean
+    configLoaded = Config_Manager.LoadConfiguration()
 
-    ' Charger les paramètres sauvegardés
+    If Not configLoaded Then
+        Debug.Print "Avertissement: Configuration par défaut utilisée"
+    End If
+
+    ' Titre avec version (depuis config ou constante)
+    Dim cfg As Config_Manager.GeneralConfig
+    cfg = Config_Manager.GetGeneralConfig()
+    Me.Caption = cfg.ApplicationName & " v" & cfg.Version & " - Cockpit de Pilotage"
+
+    ' Charger les paramètres sauvegardés (utilise aussi Config_Manager)
     LoadSavedParameters
 
     ' Mettre à jour les indicateurs visuels
@@ -60,29 +70,39 @@ Private Sub UserForm_Initialize()
 End Sub
 
 Private Sub LoadSavedParameters()
-    ' Charger les paramètres depuis la feuille PARAM
+    ' Charger les paramètres depuis la feuille PARAM ou Config_Manager
     On Error Resume Next
 
     Dim wsParam As Worksheet
+    Dim cfg As Config_Manager.GeneralConfig
+    cfg = Config_Manager.GetGeneralConfig()
+
     Set wsParam = ThisWorkbook.Sheets("PARAM")
 
     If Not wsParam Is Nothing Then
-        ' SOL ID
+        ' SOL ID (priorité: PARAM > Config_Manager > défaut)
         Me.txtSolID.Value = wsParam.Range("F2").Value
-        If Me.txtSolID.Value = "" Then Me.txtSolID.Value = "799"
+        If Me.txtSolID.Value = "" Then Me.txtSolID.Value = cfg.DefaultSolId
 
-        ' Tolérance
+        ' Tolérance (priorité: PARAM > Config_Manager > défaut)
         Me.txtTolerance.Value = wsParam.Range("B2").Value
-        If Me.txtTolerance.Value = "" Then Me.txtTolerance.Value = "100"
+        If Me.txtTolerance.Value = "" Then Me.txtTolerance.Value = CStr(cfg.DefaultTolerance)
 
-        ' Devise
+        ' Devise (depuis Config_Manager)
         If Not Me.cboDevise Is Nothing Then
             Me.cboDevise.Clear
             Me.cboDevise.AddItem "XAF"
             Me.cboDevise.AddItem "EUR"
             Me.cboDevise.AddItem "USD"
             Me.cboDevise.AddItem "XOF"
-            Me.cboDevise.Value = "XAF"
+            Me.cboDevise.Value = cfg.DefaultCurrency
+        End If
+    Else
+        ' Utiliser les valeurs Config_Manager si pas de feuille PARAM
+        Me.txtSolID.Value = cfg.DefaultSolId
+        Me.txtTolerance.Value = CStr(cfg.DefaultTolerance)
+        If Not Me.cboDevise Is Nothing Then
+            Me.cboDevise.Value = cfg.DefaultCurrency
         End If
     End If
 
@@ -126,22 +146,104 @@ Private Sub btnReset_Click()
 End Sub
 
 Private Sub btnImportBal_Click()
-    ' Import du fichier Balance
+    ' INTÉGRATION Data_Ingestion: Import intelligent du fichier Balance
+    Dim filePath As String
+    Dim result As Data_Ingestion.ImportResult
+    Dim fileInfo As Data_Ingestion.FileInfo
+
+    ' Sélection du fichier
+    filePath = Application.GetOpenFilename( _
+        FileFilter:="Fichiers Excel (*.xlsx;*.xls;*.xlsm),*.xlsx;*.xls;*.xlsm,Fichiers CSV (*.csv),*.csv,Tous (*.*),*.*", _
+        Title:="Sélectionner le fichier Balance Finacle")
+
+    If filePath = "False" Or filePath = "" Then Exit Sub
+
     Me.Hide
     DoEvents
 
-    Call Core_Engine.Importer_Source_Balance
+    ' Analyser le fichier avant import
+    fileInfo = Data_Ingestion.AnalyzeFile(filePath)
+
+    ' Afficher info fichier
+    If fileInfo.RowCount > 0 Then
+        Debug.Print "Import Balance: " & fileInfo.FileName & " (" & fileInfo.RowCount & " lignes)"
+    End If
+
+    ' Importer avec Data_Ingestion
+    result = Data_Ingestion.ImportFile(filePath, "BALANCE_RAW", True)
+
+    If result.Success Then
+        ' Valider les données importées
+        Dim validation As String
+        validation = Data_Ingestion.ValidateImportedData(ThisWorkbook.Sheets("BALANCE_RAW"), "BALANCE")
+
+        If validation = "OK" Then
+            MsgBox "Balance importée avec succès!" & vbCrLf & vbCrLf & _
+                   "Lignes importées: " & result.RowsImported & vbCrLf & _
+                   "Durée: " & Format(result.Duration, "0.00") & " sec", _
+                   vbInformation, "Import Balance"
+        Else
+            MsgBox "Balance importée avec avertissements:" & vbCrLf & vbCrLf & _
+                   validation, vbExclamation, "Validation Balance"
+        End If
+
+        ' Log
+        Call Core_Engine.WriteToAuditLog("IMPORT", "Balance importée: " & result.RowsImported & " lignes")
+    Else
+        MsgBox "Erreur lors de l'import:" & vbCrLf & result.Errors, vbCritical, "Erreur Import"
+    End If
 
     Me.Show
     UpdateAllStatuses
 End Sub
 
 Private Sub btnImportGL_Click()
-    ' Import du fichier GL Proof
+    ' INTÉGRATION Data_Ingestion: Import intelligent du fichier GL Proof
+    Dim filePath As String
+    Dim result As Data_Ingestion.ImportResult
+    Dim fileInfo As Data_Ingestion.FileInfo
+
+    ' Sélection du fichier
+    filePath = Application.GetOpenFilename( _
+        FileFilter:="Fichiers Excel (*.xlsx;*.xls;*.xlsm),*.xlsx;*.xls;*.xlsm,Fichiers CSV (*.csv),*.csv,Fichiers TXT (*.txt),*.txt,Tous (*.*),*.*", _
+        Title:="Sélectionner le fichier GL Proof")
+
+    If filePath = "False" Or filePath = "" Then Exit Sub
+
     Me.Hide
     DoEvents
 
-    Call Core_Engine.Importer_Source_GLProof
+    ' Analyser le fichier avant import
+    fileInfo = Data_Ingestion.AnalyzeFile(filePath)
+
+    ' Afficher info fichier
+    If fileInfo.RowCount > 0 Then
+        Debug.Print "Import GL: " & fileInfo.FileName & " (" & fileInfo.RowCount & " lignes)"
+    End If
+
+    ' Importer avec Data_Ingestion
+    result = Data_Ingestion.ImportFile(filePath, "GLPROOF_RAW", True)
+
+    If result.Success Then
+        ' Valider les données importées
+        Dim validation As String
+        validation = Data_Ingestion.ValidateImportedData(ThisWorkbook.Sheets("GLPROOF_RAW"), "GLPROOF")
+
+        If validation = "OK" Then
+            MsgBox "GL Proof importé avec succès!" & vbCrLf & vbCrLf & _
+                   "Lignes importées: " & result.RowsImported & vbCrLf & _
+                   "Durée: " & Format(result.Duration, "0.00") & " sec", _
+                   vbInformation, "Import GL Proof"
+        Else
+            MsgBox "GL Proof importé avec avertissements:" & vbCrLf & vbCrLf & _
+                   validation, vbExclamation, "Validation GL Proof"
+        End If
+
+        ' Log
+        Call Core_Engine.WriteToAuditLog("IMPORT", "GL Proof importé: " & result.RowsImported & " lignes")
+    Else
+        MsgBox "Erreur lors de l'import:" & vbCrLf & result.Errors, vbCritical, "Erreur Import"
+    End If
 
     Me.Show
     UpdateAllStatuses
@@ -449,9 +551,11 @@ End Sub
 Private Sub lblHelp_Click()
     ' Afficher l'aide
     Dim helpMsg As String
+    Dim cfg As Config_Manager.GeneralConfig
+    cfg = Config_Manager.GetGeneralConfig()
 
-    helpMsg = "S.A.F.A - System for Automated Financial Audit" & vbCrLf & _
-              "Version " & Core_Engine.SAFA_VERSION & vbCrLf & vbCrLf & _
+    helpMsg = cfg.ApplicationName & " - System for Automated Financial Audit" & vbCrLf & _
+              "Version " & cfg.Version & vbCrLf & vbCrLf & _
               "ÉTAPES D'UTILISATION:" & vbCrLf & _
               "1. Importer le fichier Balance Finacle" & vbCrLf & _
               "2. Importer le fichier GL Proof" & vbCrLf & _
@@ -465,8 +569,137 @@ Private Sub lblHelp_Click()
               "• Rapprochement Balance/GL automatique" & vbCrLf & _
               "• Détection de fraudes (Benford, patterns)" & vbCrLf & _
               "• Analyse IA (Z-Score, Vélocité)" & vbCrLf & _
-              "• Conformité réglementaire (COBAC, OHADA)" & vbCrLf & _
-              "• Scoring de risque automatique"
+              "• Conformité réglementaire (COBAC, OHADA, LAB/FT)" & vbCrLf & _
+              "• Scoring de risque automatique" & vbCrLf & _
+              "• Analyse temporelle (tendances, saisonnalité)" & vbCrLf & _
+              "• Analyse réseau (circuits, hubs)" & vbCrLf & _
+              "• Diagnostic système automatique"
 
-    MsgBox helpMsg, vbInformation, "Aide S.A.F.A"
+    MsgBox helpMsg, vbInformation, "Aide " & cfg.ApplicationName
+End Sub
+
+' ==============================================================================
+' ANALYSES AVANCÉES (Nouveaux modules v10.0)
+' ==============================================================================
+
+Private Sub btnAnalyseTemporelle_Click()
+    ' Lancer l'analyse temporelle avancée
+    On Error GoTo ErrHandler
+
+    If Not Core_Engine.FeuilleExiste("RECONCIL") Then
+        MsgBox "Veuillez d'abord lancer une analyse de rapprochement.", _
+               vbExclamation, "Données manquantes"
+        Exit Sub
+    End If
+
+    Me.Hide
+    DoEvents
+
+    Call Temporal_Analysis.Lancer_Analyse_Temporelle
+
+    MsgBox "Analyse temporelle terminée!" & vbCrLf & vbCrLf & _
+           "Consultez la feuille TEMPORAL_ANALYSIS.", _
+           vbInformation, "Analyse Temporelle"
+
+    Me.Show
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Erreur: " & Err.Description, vbCritical, "Erreur"
+    Me.Show
+End Sub
+
+Private Sub btnAnalyseReseau_Click()
+    ' Lancer l'analyse de réseau transactionnel
+    On Error GoTo ErrHandler
+
+    If Not Core_Engine.FeuilleExiste("TRANSACTION_DATA") Then
+        MsgBox "Données transactionnelles requises." & vbCrLf & _
+               "Importez d'abord le GL Proof avec détails.", _
+               vbExclamation, "Données manquantes"
+        Exit Sub
+    End If
+
+    Me.Hide
+    DoEvents
+
+    Call Network_Analysis.Lancer_Analyse_Reseau
+
+    MsgBox "Analyse réseau terminée!" & vbCrLf & vbCrLf & _
+           "Consultez la feuille NETWORK_ANALYSIS.", _
+           vbInformation, "Analyse Réseau"
+
+    Me.Show
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Erreur: " & Err.Description, vbCritical, "Erreur"
+    Me.Show
+End Sub
+
+Private Sub btnDiagnostic_Click()
+    ' Lancer le diagnostic système complet
+    On Error GoTo ErrHandler
+
+    Me.Hide
+    DoEvents
+
+    Call Auto_Diagnostic.LancerDiagnosticComplet
+
+    MsgBox "Diagnostic terminé!" & vbCrLf & vbCrLf & _
+           "Consultez la feuille SYSTEM_DIAGNOSTIC.", _
+           vbInformation, "Diagnostic Système"
+
+    Me.Show
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Erreur: " & Err.Description, vbCritical, "Erreur"
+    Me.Show
+End Sub
+
+Private Sub btnConfiguration_Click()
+    ' Afficher/modifier la configuration
+    On Error GoTo ErrHandler
+
+    Dim rep As Integer
+
+    rep = MsgBox("Options de configuration:" & vbCrLf & vbCrLf & _
+                 "[OUI] Voir la configuration actuelle" & vbCrLf & _
+                 "[NON] Sauvegarder dans une feuille Excel" & vbCrLf & _
+                 "[ANNULER] Retour", _
+                 vbYesNoCancel + vbQuestion, "Configuration S.A.F.A")
+
+    Select Case rep
+        Case vbYes
+            ' Afficher résumé config
+            Dim cfg As Config_Manager.FullConfig
+            cfg = Config_Manager.GetConfig()
+
+            Dim cfgMsg As String
+            cfgMsg = "CONFIGURATION ACTUELLE:" & vbCrLf & vbCrLf & _
+                     "Général:" & vbCrLf & _
+                     "  • Tolérance: " & cfg.General.DefaultTolerance & " XAF" & vbCrLf & _
+                     "  • Devise: " & cfg.General.DefaultCurrency & vbCrLf & _
+                     "  • SOL ID: " & cfg.General.DefaultSolId & vbCrLf & vbCrLf & _
+                     "Forensique:" & vbCrLf & _
+                     "  • Z-Score Warning: " & cfg.Forensic.ZScoreWarning & vbCrLf & _
+                     "  • Z-Score Critical: " & cfg.Forensic.ZScoreCritical & vbCrLf & vbCrLf & _
+                     "Réglementaire:" & vbCrLf & _
+                     "  • COBAC Suspens: " & cfg.Regulatory.CobacSuspensLimitDays & " jours" & vbCrLf & _
+                     "  • LAB/FT Seuil: " & Format(cfg.Regulatory.LabftDeclarationThreshold, "#,##0") & " XAF"
+
+            MsgBox cfgMsg, vbInformation, "Configuration"
+
+        Case vbNo
+            ' Sauvegarder en feuille
+            Call Config_Manager.SaveConfigurationToSheet
+            MsgBox "Configuration sauvegardée dans la feuille CONFIG_DATA.", _
+                   vbInformation, "Sauvegarde"
+    End Select
+
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Erreur: " & Err.Description, vbCritical, "Erreur"
 End Sub
