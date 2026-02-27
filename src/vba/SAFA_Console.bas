@@ -324,7 +324,7 @@ Private Sub AnalysesAvancees()
                 MsgBox "Donnees transactionnelles requises", vbExclamation
             End If
         Case "6"
-            Call Regulatory_Compliance.Lancer_Controles_Conformite
+            Call Regulatory_Compliance.Lancer_Verification_Conformite
             MsgBox "Controles conformite termines! Voir COMPLIANCE_CHECK", vbInformation
     End Select
 

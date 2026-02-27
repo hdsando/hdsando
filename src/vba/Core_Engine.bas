@@ -1241,12 +1241,16 @@ End Sub
 ' ==============================================================================
 
 Public Sub Afficher_Cockpit()
-    USF_Cockpit.Show
+    ' CORRIGÉ: Utiliser SAFA_Console au lieu de USF_Cockpit (formulaire non disponible)
+    On Error Resume Next
+    Call SAFA_Console.Demarrer
+    On Error GoTo 0
 End Sub
 
 Public Sub Lancer_Demarrage_Differe()
     Call Sequence_Demarrage
-    USF_Cockpit.Show
+    ' CORRIGÉ: Utiliser SAFA_Console au lieu de USF_Cockpit
+    Call SAFA_Console.Demarrer
 End Sub
 
 Public Sub Lancer_Traitement_Complet()
