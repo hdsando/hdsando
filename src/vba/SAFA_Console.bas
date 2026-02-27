@@ -239,16 +239,29 @@ End Sub
 ' PROCEDURE: AfficherRapports
 '===============================================================================
 Private Sub AfficherRapports()
+    On Error GoTo ErrHandler
+
     Dim choix As String
     Dim menu As String
 
+    ' Verifier si l'analyse de base a ete faite
+    If Not Core_Engine.FeuilleExiste("RECONCIL") Then
+        MsgBox "Aucun rapport disponible." & vbCrLf & vbCrLf & _
+               "Lancez d'abord une analyse (option 4 du menu principal).", _
+               vbExclamation, "Analyse requise"
+        Exit Sub
+    End If
+
     menu = "===== RAPPORTS =====" & vbCrLf & vbCrLf
+    menu = menu & "--- Voir les feuilles ---" & vbCrLf
     menu = menu & "1 - RECONCIL (Rapprochement)" & vbCrLf
     menu = menu & "2 - AUDIT_REPORT (Alertes)" & vbCrLf
     menu = menu & "3 - DASHBOARD_RISQUE (Tableau de bord)" & vbCrLf
     menu = menu & "4 - COMPLIANCE_CHECK (Conformite)" & vbCrLf
     menu = menu & "5 - EXECUTIVE_SUMMARY (Synthese)" & vbCrLf
-    menu = menu & "6 - Generer PDF" & vbCrLf
+    menu = menu & vbCrLf & "--- Actions ---" & vbCrLf
+    menu = menu & "6 - GENERER tous les rapports" & vbCrLf
+    menu = menu & "7 - Exporter en PDF" & vbCrLf
     menu = menu & "0 - Retour" & vbCrLf & vbCrLf
     menu = menu & "Choix:"
 
@@ -260,22 +273,50 @@ Private Sub AfficherRapports()
         Case "2"
             Call ActiverFeuille("AUDIT_REPORT")
         Case "3"
+            If Not Core_Engine.FeuilleExiste("DASHBOARD_RISQUE") Then
+                Call Report_Generator.GenerateRiskDashboard(ThisWorkbook)
+            End If
             Call ActiverFeuille("DASHBOARD_RISQUE")
         Case "4"
+            If Not Core_Engine.FeuilleExiste("COMPLIANCE_CHECK") Then
+                Call Regulatory_Compliance.Lancer_Verification_Conformite
+            End If
             Call ActiverFeuille("COMPLIANCE_CHECK")
         Case "5"
+            If Not Core_Engine.FeuilleExiste("EXECUTIVE_SUMMARY") Then
+                Call Report_Generator.GenerateExecutiveSummary(ThisWorkbook)
+            End If
             Call ActiverFeuille("EXECUTIVE_SUMMARY")
         Case "6"
+            Call GenererTousRapports
+        Case "7"
             Call Report_Generator.ExportToPDF(ThisWorkbook)
+            MsgBox "Export PDF termine!", vbInformation
     End Select
+
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Erreur: " & Err.Description, vbCritical, "Erreur"
 End Sub
 
 '===============================================================================
 ' PROCEDURE: AnalysesAvancees
 '===============================================================================
 Private Sub AnalysesAvancees()
+    On Error GoTo ErrHandler
+
     Dim choix As String
     Dim menu As String
+    Dim analyseOK As Boolean
+
+    ' Verifier si l'analyse de base a ete faite
+    If Not Core_Engine.FeuilleExiste("RECONCIL") Then
+        MsgBox "ATTENTION: Aucune analyse de base effectuee." & vbCrLf & vbCrLf & _
+               "Retournez au menu principal et lancez l'option 4 d'abord.", _
+               vbExclamation, "Analyse requise"
+        Exit Sub
+    End If
 
     menu = "===== ANALYSES AVANCEES =====" & vbCrLf & vbCrLf
     menu = menu & "1 - Analyse Temporelle (tendances)" & vbCrLf
@@ -284,51 +325,125 @@ Private Sub AnalysesAvancees()
     menu = menu & "4 - IA par Compte (Z-Score)" & vbCrLf
     menu = menu & "5 - Analyse Benford" & vbCrLf
     menu = menu & "6 - Conformite Reglementaire" & vbCrLf
+    menu = menu & "7 - Generer Tous les Rapports" & vbCrLf
     menu = menu & "0 - Retour" & vbCrLf & vbCrLf
     menu = menu & "Choix:"
 
     choix = InputBox(menu, "Analyses Avancees")
 
+    If choix = "" Or choix = "0" Then Exit Sub
+
     Application.ScreenUpdating = False
+    analyseOK = False
 
     Select Case choix
         Case "1"
-            If Core_Engine.FeuilleExiste("RECONCIL") Then
-                Call Temporal_Analysis.Lancer_Analyse_Temporelle
-                MsgBox "Analyse temporelle terminee! Voir TEMPORAL_ANALYSIS", vbInformation
-            Else
-                MsgBox "Lancez d'abord une analyse de base (option 4)", vbExclamation
+            Call Temporal_Analysis.Lancer_Analyse_Temporelle
+            analyseOK = Core_Engine.FeuilleExiste("TEMPORAL_ANALYSIS")
+            If analyseOK Then
+                MsgBox "Analyse temporelle terminee!" & vbCrLf & "Voir feuille TEMPORAL_ANALYSIS", vbInformation
             End If
+
         Case "2"
             If Core_Engine.FeuilleExiste("TRANSACTION_DATA") Then
                 Call Network_Analysis.Lancer_Analyse_Reseau
-                MsgBox "Analyse reseau terminee! Voir NETWORK_ANALYSIS", vbInformation
+                analyseOK = Core_Engine.FeuilleExiste("NETWORK_ANALYSIS")
+                If analyseOK Then
+                    MsgBox "Analyse reseau terminee!" & vbCrLf & "Voir feuille NETWORK_ANALYSIS", vbInformation
+                End If
             Else
-                MsgBox "Donnees transactionnelles requises", vbExclamation
+                MsgBox "Feuille TRANSACTION_DATA requise." & vbCrLf & _
+                       "Relancez l'analyse complete (option 4 menu principal)", vbExclamation
             End If
+
         Case "3"
-            Call Auto_Diagnostic.LancerDiagnosticComplet
-            MsgBox "Diagnostic termine! Voir SYSTEM_DIAGNOSTIC", vbInformation
+            Dim health As Auto_Diagnostic.SystemHealth
+            health = Auto_Diagnostic.LancerDiagnosticComplet()
+            analyseOK = Core_Engine.FeuilleExiste("SYSTEM_DIAGNOSTIC")
+            If analyseOK Then
+                MsgBox "Diagnostic termine!" & vbCrLf & vbCrLf & _
+                       "Score global: " & health.OverallScore & "/100" & vbCrLf & _
+                       "Voir feuille SYSTEM_DIAGNOSTIC", vbInformation
+            End If
+
         Case "4"
             If Core_Engine.FeuilleExiste("TRANSACTION_DATA") Then
                 Call Advanced_AI.Lancer_IA_Par_Compte
-                MsgBox "Analyse IA terminee! Voir AUDIT_REPORT", vbInformation
+                MsgBox "Analyse IA terminee!" & vbCrLf & "Voir feuille AUDIT_REPORT", vbInformation
+                analyseOK = True
             Else
-                MsgBox "Donnees transactionnelles requises", vbExclamation
+                MsgBox "Feuille TRANSACTION_DATA requise." & vbCrLf & _
+                       "Relancez l'analyse complete (option 4 menu principal)", vbExclamation
             End If
+
         Case "5"
             If Core_Engine.FeuilleExiste("TRANSACTION_DATA") Then
-                Call Forensic_Rules.Analyser_Benford
+                Call Forensic_Rules.Lancer_Benford
                 MsgBox "Analyse Benford terminee!", vbInformation
+                analyseOK = True
             Else
-                MsgBox "Donnees transactionnelles requises", vbExclamation
+                MsgBox "Feuille TRANSACTION_DATA requise." & vbCrLf & _
+                       "Relancez l'analyse complete (option 4 menu principal)", vbExclamation
             End If
+
         Case "6"
             Call Regulatory_Compliance.Lancer_Verification_Conformite
-            MsgBox "Controles conformite termines! Voir COMPLIANCE_CHECK", vbInformation
+            analyseOK = Core_Engine.FeuilleExiste("COMPLIANCE_CHECK")
+            If analyseOK Then
+                MsgBox "Controles conformite termines!" & vbCrLf & "Voir feuille COMPLIANCE_CHECK", vbInformation
+            End If
+
+        Case "7"
+            ' Generer tous les rapports
+            Call GenererTousRapports
+            analyseOK = True
     End Select
 
     Application.ScreenUpdating = True
+
+    If Not analyseOK And choix <> "0" And choix <> "" Then
+        MsgBox "L'analyse n'a pas produit de resultats." & vbCrLf & _
+               "Verifiez les donnees sources.", vbExclamation
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "Erreur dans AnalysesAvancees:" & vbCrLf & _
+           Err.Number & " - " & Err.Description, vbCritical, "Erreur"
+End Sub
+
+'===============================================================================
+' PROCEDURE: GenererTousRapports
+'===============================================================================
+Private Sub GenererTousRapports()
+    On Error Resume Next
+
+    MsgBox "Generation de tous les rapports..." & vbCrLf & _
+           "Cela peut prendre quelques instants.", vbInformation
+
+    Application.ScreenUpdating = False
+
+    ' Generer les rapports
+    Call Report_Generator.GenerateExecutiveSummary(ThisWorkbook)
+    Call Report_Generator.GenerateRiskDashboard(ThisWorkbook)
+    Call Report_Generator.GenerateForensicReport(ThisWorkbook)
+    Call Report_Generator.GenerateComplianceReport(ThisWorkbook)
+    Call Report_Generator.GenerateSampleSheet(ThisWorkbook)
+
+    ' Finaliser rapport AI
+    Call Advanced_AI.Finaliser_Rapport
+
+    Application.ScreenUpdating = True
+
+    MsgBox "Tous les rapports ont ete generes!" & vbCrLf & vbCrLf & _
+           "Feuilles creees:" & vbCrLf & _
+           "- EXECUTIVE_SUMMARY" & vbCrLf & _
+           "- DASHBOARD_RISQUE" & vbCrLf & _
+           "- FORENSIC_ANALYSIS" & vbCrLf & _
+           "- COMPLIANCE_CHECK" & vbCrLf & _
+           "- ECHANTILLON_TEST", vbInformation, "Rapports Generes"
 End Sub
 
 '===============================================================================
