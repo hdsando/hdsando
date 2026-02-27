@@ -914,7 +914,9 @@ ErrorHandler:
     LogError MODULE_NAME, "ExportConfigurationToJSON", Err.Number, Err.Description
 End Sub
 
+' CORRIGÉ: Utiliser SAFA_Common.LogError pour centraliser la gestion d'erreurs
 Private Sub LogError(moduleName As String, procName As String, errNum As Long, errDesc As String)
     On Error Resume Next
-    Debug.Print Now & " | " & moduleName & "." & procName & " | Error " & errNum & ": " & errDesc
+    ' Déléguer à SAFA_Common si disponible, sinon Debug.Print
+    Call SAFA_Common.LogError(moduleName, procName, errNum, errDesc)
 End Sub
