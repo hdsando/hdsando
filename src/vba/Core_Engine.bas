@@ -410,6 +410,7 @@ End Function
 Public Sub Importer_Source_Balance()
     Dim fd As FileDialog, filePath As String, wb As Workbook
     Dim rowCount As Long
+    Dim previousAutomationSecurity As Long
 
     ' Créer la feuille si nécessaire
     If Not FeuilleExiste("BALANCE_RAW") Then
@@ -434,6 +435,8 @@ Public Sub Importer_Source_Balance()
 
     Application.ScreenUpdating = False
     On Error GoTo ImportError
+    previousAutomationSecurity = Application.AutomationSecurity
+    Application.AutomationSecurity = msoAutomationSecurityForceDisable
 
     ThisWorkbook.Sheets("BALANCE_RAW").Cells.Clear
 
@@ -445,6 +448,7 @@ Public Sub Importer_Source_Balance()
 
     rowCount = ThisWorkbook.Sheets("BALANCE_RAW").Cells(Rows.count, 1).End(xlUp).Row
     wb.Close False
+    Application.AutomationSecurity = previousAutomationSecurity
 
     Application.ScreenUpdating = True
 
@@ -453,6 +457,9 @@ Public Sub Importer_Source_Balance()
     Exit Sub
 
 ImportError:
+    On Error Resume Next
+    If Not wb Is Nothing Then wb.Close False
+    Application.AutomationSecurity = previousAutomationSecurity
     Application.ScreenUpdating = True
     Call LogError("Core_Engine", "Importer_Source_Balance", Err.Number, Err.Description)
     MsgBox "Erreur lors de l'import: " & Err.Description, vbCritical, "Erreur Import"
@@ -461,6 +468,7 @@ End Sub
 Public Sub Importer_Source_GLProof()
     Dim fd As FileDialog, filePath As String, wb As Workbook
     Dim sh As Worksheet, lr As Long, totalRows As Long
+    Dim previousAutomationSecurity As Long
 
     If Not FeuilleExiste("GLPROOF_RAW") Then
         ThisWorkbook.Sheets.Add.name = "GLPROOF_RAW"
@@ -481,6 +489,8 @@ Public Sub Importer_Source_GLProof()
 
     Application.ScreenUpdating = False
     On Error GoTo ImportError
+    previousAutomationSecurity = Application.AutomationSecurity
+    Application.AutomationSecurity = msoAutomationSecurityForceDisable
 
     ThisWorkbook.Sheets("GLPROOF_RAW").Cells.Clear
 
@@ -501,6 +511,7 @@ Public Sub Importer_Source_GLProof()
 
     Application.CutCopyMode = False
     wb.Close False
+    Application.AutomationSecurity = previousAutomationSecurity
 
     Application.ScreenUpdating = True
 
@@ -509,6 +520,9 @@ Public Sub Importer_Source_GLProof()
     Exit Sub
 
 ImportError:
+    On Error Resume Next
+    If Not wb Is Nothing Then wb.Close False
+    Application.AutomationSecurity = previousAutomationSecurity
     Application.ScreenUpdating = True
     Call LogError("Core_Engine", "Importer_Source_GLProof", Err.Number, Err.Description)
     MsgBox "Erreur lors de l'import: " & Err.Description, vbCritical, "Erreur Import"
