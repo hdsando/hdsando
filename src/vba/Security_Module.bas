@@ -64,9 +64,12 @@ Public Function Authenticate(username As String, password As String) As Boolean
     On Error Resume Next
     Set wsUsers = ThisWorkbook.Sheets("USERS")
     If wsUsers Is Nothing Then
-        ' Créer la feuille users avec admin par défaut
-        Call CreateDefaultUsersSheet
-        Set wsUsers = ThisWorkbook.Sheets("USERS")
+        On Error GoTo 0
+        Call WriteSecurityLog("AUTH_CONFIG_ERROR", username, "Feuille USERS introuvable - authentification refusée")
+        MsgBox "Configuration de sécurité invalide: feuille USERS manquante." & vbCrLf & _
+               "Contactez un administrateur.", vbCritical, "Erreur de sécurité"
+        Authenticate = False
+        Exit Function
     End If
     On Error GoTo 0
 
@@ -177,7 +180,7 @@ Public Function HasPermission(requiredRole As String) As Boolean
 End Function
 
 Private Sub CreateDefaultUsersSheet()
-    ' Créer feuille utilisateurs avec admin par défaut
+    ' Créer feuille utilisateurs vide (sans compte par défaut)
     Dim ws As Worksheet
 
     Set ws = ThisWorkbook.Sheets.Add
@@ -186,14 +189,6 @@ Private Sub CreateDefaultUsersSheet()
     ' En-têtes
     ws.Range("A1:F1").Value = Array("Username", "PasswordHash", "Role", "FullName", "LastLogin", "IsActive")
     ws.Range("A1:F1").Font.Bold = True
-
-    ' Admin par défaut (mot de passe: admin123)
-    ws.Range("A2").Value = "admin"
-    ws.Range("B2").Value = HashPassword("admin123")
-    ws.Range("C2").Value = "ADMIN"
-    ws.Range("D2").Value = "Administrateur"
-    ws.Range("E2").Value = Now
-    ws.Range("F2").Value = True
 
     ' Masquer la feuille
     ws.Visible = xlSheetVeryHidden
