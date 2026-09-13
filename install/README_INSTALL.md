@@ -34,6 +34,15 @@ Sur la feuille MENU : **Tests auto** → génère des données démo (300 compte
 4. **LANCER L'ANALYSE COMPLETE**.
 5. Consulter **Dashboard / Alertes / Conformité / Synthèse**, puis **Export PDF**.
 
+## Installation sans script (si le `.vbs` est bloqué par le navigateur ou l'antivirus)
+
+1. Décompressez le projet, par ex. dans `C:\SAFA\` (le dossier doit contenir `src\vba`).
+2. Ouvrez Excel, créez un classeur vide, **Enregistrer sous** → `C:\SAFA\SAFA.xlsm` (type *Classeur prenant en charge les macros*).
+3. ALT+F11 → *Fichier* → *Importer un fichier…* → `C:\SAFA\install\Install_Bootstrap.bas`.
+4. ALT+F8 → **Installer_SAFA** → *Exécuter*.
+
+Le module importe tous les autres depuis Excel (avec conversion des accents), injecte `ThisWorkbook`, construit le MENU et propose les données de démonstration. Vous pouvez ensuite supprimer le module `Install_Bootstrap`.
+
 ## Installation manuelle (sans le script)
 
 1. Créez un classeur `.xlsm`, ouvrez l'éditeur VBA (ALT+F11).
