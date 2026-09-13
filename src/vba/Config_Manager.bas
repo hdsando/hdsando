@@ -242,23 +242,99 @@ Private Sub LoadFromJSONFile(filePath As String)
     jsonContent = ts.ReadAll
     ts.Close
 
-    ' Parser simple JSON (sans bibliotheque externe)
-    ' Extraction des valeurs principales
-    mConfig.General.DefaultTolerance = ExtractJSONNumber(jsonContent, "default_tolerance", 100)
-    mConfig.General.DefaultCurrency = ExtractJSONString(jsonContent, "default_currency", "XAF")
-    mConfig.General.MaxRowsMemory = ExtractJSONNumber(jsonContent, "max_rows_memory", 500000)
-    mConfig.General.DefaultSolId = ExtractJSONString(jsonContent, "default_sol_id", "799")
+    ' Parser simple JSON (sans bibliotheque externe), SENSIBLE AUX SECTIONS:
+    ' "threshold_critical" existe dans forensic.z_score ET risk_scoring.thresholds,
+    ' on restreint donc chaque recherche a la section/sous-section concernee.
+    Dim sec As String
+
+    ' General
+    sec = JSONSection(jsonContent, "general")
+    With mConfig.General
+        .ApplicationName = ExtractJSONString(sec, "application_name", .ApplicationName)
+        .Version = ExtractJSONString(sec, "version", .Version)
+        .DefaultTolerance = ExtractJSONNumber(sec, "default_tolerance", .DefaultTolerance)
+        .DefaultCurrency = ExtractJSONString(sec, "default_currency", .DefaultCurrency)
+        .MaxRowsMemory = ExtractJSONNumber(sec, "max_rows_memory", .MaxRowsMemory)
+        .DefaultSolId = ExtractJSONString(sec, "default_sol_id", .DefaultSolId)
+    End With
 
     ' Forensic
-    mConfig.Forensic.BenfordChiSquaredCritical = ExtractJSONNumber(jsonContent, "chi_squared_critical_value", 15.51)
-    mConfig.Forensic.BenfordMADMarginal = ExtractJSONNumber(jsonContent, "mad_threshold_marginal", 0.015)
-    mConfig.Forensic.ZScoreWarning = ExtractJSONNumber(jsonContent, "threshold_warning", 2.5)
-    mConfig.Forensic.ZScoreCritical = ExtractJSONNumber(jsonContent, "threshold_critical", 3.5)
+    Dim secF As String
+    secF = JSONSection(jsonContent, "forensic")
+    With mConfig.Forensic
+        sec = JSONSection(secF, "benford")
+        .BenfordChiSquaredCritical = ExtractJSONNumber(sec, "chi_squared_critical_value", .BenfordChiSquaredCritical)
+        .BenfordMADExcellent = ExtractJSONNumber(sec, "mad_threshold_excellent", .BenfordMADExcellent)
+        .BenfordMADAcceptable = ExtractJSONNumber(sec, "mad_threshold_acceptable", .BenfordMADAcceptable)
+        .BenfordMADMarginal = ExtractJSONNumber(sec, "mad_threshold_marginal", .BenfordMADMarginal)
+        .BenfordMinSampleSize = ExtractJSONNumber(sec, "min_sample_size", .BenfordMinSampleSize)
+        sec = JSONSection(secF, "z_score")
+        .ZScoreWarning = ExtractJSONNumber(sec, "threshold_warning", .ZScoreWarning)
+        .ZScoreCritical = ExtractJSONNumber(sec, "threshold_critical", .ZScoreCritical)
+        .ZScoreMinTransactions = ExtractJSONNumber(sec, "min_transactions", .ZScoreMinTransactions)
+        sec = JSONSection(secF, "structuring")
+        .StructuringThreshold = ExtractJSONNumber(sec, "threshold_amount", .StructuringThreshold)
+        .StructuringMinCount = ExtractJSONNumber(sec, "min_count", .StructuringMinCount)
+        sec = JSONSection(secF, "layering")
+        .LayeringThreshold = ExtractJSONNumber(sec, "threshold_amount", .LayeringThreshold)
+        .LayeringMinCount = ExtractJSONNumber(sec, "min_count", .LayeringMinCount)
+        sec = JSONSection(secF, "weekend_analysis")
+        .WeekendThreshold = ExtractJSONNumber(sec, "threshold_amount", .WeekendThreshold)
+    End With
+
+    ' Risk scoring
+    Dim secR As String
+    secR = JSONSection(jsonContent, "risk_scoring")
+    With mConfig.RiskScoring
+        sec = JSONSection(secR, "weights")
+        .WeightAmount = ExtractJSONNumber(sec, "amount_factor", .WeightAmount)
+        .WeightAge = ExtractJSONNumber(sec, "age_factor", .WeightAge)
+        .WeightOrphan = ExtractJSONNumber(sec, "orphan_factor", .WeightOrphan)
+        .WeightVolume = ExtractJSONNumber(sec, "volume_factor", .WeightVolume)
+        .WeightSensitivity = ExtractJSONNumber(sec, "sensitivity_factor", .WeightSensitivity)
+        sec = JSONSection(secR, "thresholds")
+        .ThresholdCritical = ExtractJSONNumber(sec, "critical", .ThresholdCritical)
+        .ThresholdHigh = ExtractJSONNumber(sec, "high", .ThresholdHigh)
+        .ThresholdMedium = ExtractJSONNumber(sec, "medium", .ThresholdMedium)
+        sec = JSONSection(secR, "amount_brackets")
+        .AmountTier1 = ExtractJSONNumber(sec, "tier1", .AmountTier1)
+        .AmountTier2 = ExtractJSONNumber(sec, "tier2", .AmountTier2)
+        .AmountTier3 = ExtractJSONNumber(sec, "tier3", .AmountTier3)
+        sec = JSONSection(secR, "age_brackets_days")
+        .AgeTier1 = ExtractJSONNumber(sec, "tier1", .AgeTier1)
+        .AgeTier2 = ExtractJSONNumber(sec, "tier2", .AgeTier2)
+        .AgeTier3 = ExtractJSONNumber(sec, "tier3", .AgeTier3)
+    End With
 
     ' Regulatory
-    mConfig.Regulatory.CobacSuspensLimitDays = ExtractJSONNumber(jsonContent, "suspens_limit_days", 90)
-    mConfig.Regulatory.CobacTransitLimitDays = ExtractJSONNumber(jsonContent, "transit_limit_days", 7)
-    mConfig.Regulatory.LabftDeclarationThreshold = ExtractJSONNumber(jsonContent, "declaration_threshold_xaf", 5000000)
+    Dim secG As String
+    secG = JSONSection(jsonContent, "regulatory")
+    With mConfig.Regulatory
+        sec = JSONSection(secG, "cobac")
+        .CobacSuspensLimitDays = ExtractJSONNumber(sec, "suspens_limit_days", .CobacSuspensLimitDays)
+        .CobacTransitLimitDays = ExtractJSONNumber(sec, "transit_limit_days", .CobacTransitLimitDays)
+        sec = JSONSection(secG, "beac")
+        .BeacReserveRatio = ExtractJSONNumber(sec, "reserve_ratio", .BeacReserveRatio)
+        sec = JSONSection(secG, "lab_ft")
+        .LabftDeclarationThreshold = ExtractJSONNumber(sec, "declaration_threshold_xaf", .LabftDeclarationThreshold)
+        .LabftStructuringThreshold = ExtractJSONNumber(sec, "structuring_threshold_xaf", .LabftStructuringThreshold)
+        sec = JSONSection(secG, "prudential")
+        .PrudentialLargeExposureRatio = ExtractJSONNumber(sec, "large_exposure_ratio", .PrudentialLargeExposureRatio)
+    End With
+
+    ' IFRS 9
+    sec = JSONSection(JSONSection(jsonContent, "ifrs9"), "provision_rates")
+    With mConfig.IFRS9
+        .Stage3Days = ExtractJSONNumber(sec, "stage3_days", .Stage3Days)
+        .Stage3Rate = ExtractJSONNumber(sec, "stage3_rate", .Stage3Rate)
+        .Stage2HighDays = ExtractJSONNumber(sec, "stage2_high_days", .Stage2HighDays)
+        .Stage2HighRate = ExtractJSONNumber(sec, "stage2_high_rate", .Stage2HighRate)
+        .Stage2LowDays = ExtractJSONNumber(sec, "stage2_low_days", .Stage2LowDays)
+        .Stage2LowRate = ExtractJSONNumber(sec, "stage2_low_rate", .Stage2LowRate)
+        .Stage1HighDays = ExtractJSONNumber(sec, "stage1_high_days", .Stage1HighDays)
+        .Stage1HighRate = ExtractJSONNumber(sec, "stage1_high_rate", .Stage1HighRate)
+        .Stage1LowRate = ExtractJSONNumber(sec, "stage1_low_rate", .Stage1LowRate)
+    End With
 
     Set fso = Nothing
 
@@ -690,6 +766,36 @@ End Sub
 '===============================================================================
 ' FONCTIONS UTILITAIRES JSON
 '===============================================================================
+
+Private Function JSONSection(jsonContent As String, sectionKey As String) As String
+    ' Retourne le contenu de l'objet JSON "sectionKey": { ... } (accolades equilibrees).
+    ' Chaine vide si la section est absente -> les valeurs par defaut sont conservees.
+    Dim pos As Long, braceStart As Long, depth As Long, i As Long, c As String
+    Dim inStr_ As Boolean
+
+    pos = InStr(1, jsonContent, """" & sectionKey & """", vbTextCompare)
+    If pos = 0 Then Exit Function
+    braceStart = InStr(pos, jsonContent, "{")
+    If braceStart = 0 Then Exit Function
+
+    depth = 0
+    For i = braceStart To Len(jsonContent)
+        c = Mid(jsonContent, i, 1)
+        If c = """" Then
+            inStr_ = Not inStr_
+        ElseIf Not inStr_ Then
+            If c = "{" Then
+                depth = depth + 1
+            ElseIf c = "}" Then
+                depth = depth - 1
+                If depth = 0 Then
+                    JSONSection = Mid(jsonContent, braceStart, i - braceStart + 1)
+                    Exit Function
+                End If
+            End If
+        End If
+    Next i
+End Function
 
 Private Function ExtractJSONString(jsonContent As String, key As String, defaultValue As String) As String
     On Error GoTo ErrorHandler

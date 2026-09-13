@@ -53,6 +53,15 @@ Public Sub Lancer_IA_Par_Compte()
 
     On Error GoTo IAError
 
+    ' Seuils lus dans la configuration (settings.json / CONFIG_DATA), defauts sinon
+    Dim cfgF As Config_Manager.ForensicConfig
+    cfgF = Config_Manager.GetForensicConfig()
+    Dim zWarn As Double, zCrit As Double, minTx As Long
+    zWarn = cfgF.ZScoreWarning: zCrit = cfgF.ZScoreCritical: minTx = cfgF.ZScoreMinTransactions
+    If zWarn <= 0 Then zWarn = Z_SCORE_THRESHOLD
+    If zCrit <= 0 Then zCrit = Z_SCORE_CRITICAL
+    If minTx <= 0 Then minTx = MIN_TRANSACTIONS_FOR_STATS
+
     ' Vérification dépendances
     If Not Core_Engine.FeuilleExiste("TRANSACTION_DATA") Or _
        Not Core_Engine.FeuilleExiste("AUDIT_REPORT") Then
@@ -118,7 +127,7 @@ Public Sub Lancer_IA_Par_Compte()
         key = Core_Engine.SafeText(wsT.Cells(i, 1).Value)
 
         If key <> "" And dictCount.Exists(key) Then
-            If dictCount(key) >= MIN_TRANSACTIONS_FOR_STATS Then
+            If dictCount(key) >= minTx Then
                 Dim mean As Double, variance As Double, stdDev As Double, z As Double
                 Dim n As Long
 
@@ -132,14 +141,14 @@ Public Sub Lancer_IA_Par_Compte()
                     z = (mnt - mean) / stdDev
 
                     ' Seuils de détection multi-niveau
-                    If Abs(z) > Z_SCORE_CRITICAL And Abs(mnt) > 1000000 Then
+                    If Abs(z) > zCrit And Abs(mnt) > 1000000 Then
                         Call AddAIAlert(wsA, r, "IA-001", "Z-SCORE CRITIQUE", _
                             "Transaction hautement atypique (Z=" & Format(z, "0.00") & ")", _
                             "CRITICAL", key, _
                             "Moy=" & Format(mean, "#,##0") & " | Ecart-type=" & Format(stdDev, "#,##0"), _
                             mnt)
 
-                    ElseIf Abs(z) > Z_SCORE_THRESHOLD And Abs(mnt) > 100000 Then
+                    ElseIf Abs(z) > zWarn And Abs(mnt) > 100000 Then
                         Call AddAIAlert(wsA, r, "IA-002", "Z-SCORE", _
                             "Transaction atypique (Z=" & Format(z, "0.00") & ")", _
                             "HIGH", key, _
@@ -239,7 +248,7 @@ Public Sub Gerer_Historique()
     ' Analyser écarts actuels et comparer avec historique
     For i = 2 To wsR.Cells(wsR.Rows.count, 1).End(xlUp).Row
         acct = Core_Engine.SafeText(wsR.Cells(i, 1).Value)
-        newEcart = Core_Engine.SafeVal(wsR.Cells(i, 5).Value)
+        newEcart = Core_Engine.SafeVal(wsR.Cells(i, SAFA_Common.RECONCIL_COL_ECART).Value)
 
         ' Enregistrer dans historique
         wsH.Cells(histRow, 1).Value = Date
@@ -290,7 +299,7 @@ Public Sub Gerer_Historique()
             wsH.Cells(histRow, 4).Interior.Color = RGB(173, 216, 230)
         End If
 
-        wsH.Cells(histRow, 5).Value = Core_Engine.SafeVal(wsR.Cells(i, 12).Value) ' Risk Score
+        wsH.Cells(histRow, 5).Value = Core_Engine.SafeVal(wsR.Cells(i, SAFA_Common.RECONCIL_COL_SCORE).Value) ' Risk Score
         histRow = histRow + 1
     Next i
 
@@ -340,8 +349,8 @@ Public Sub Analyser_Comportement_Comptes()
         Dim clusterID As Integer
 
         acct = Core_Engine.SafeText(wsR.Cells(i, 1).Value)
-        volume = Abs(Core_Engine.SafeVal(wsR.Cells(i, 5).Value)) ' Écart comme proxy volume
-        nbTrans = Core_Engine.SafeVal(wsR.Cells(i, 7).Value)
+        volume = Abs(Core_Engine.SafeVal(wsR.Cells(i, SAFA_Common.RECONCIL_COL_ECART).Value)) ' Écart comme proxy volume
+        nbTrans = Core_Engine.SafeVal(wsR.Cells(i, SAFA_Common.RECONCIL_COL_NB_TRANS).Value)
 
         ' Classification simple basée sur volume et transactions
         If nbTrans = 0 Then
@@ -360,7 +369,7 @@ Public Sub Analyser_Comportement_Comptes()
         outputArray(outRow, 3) = clusters(clusterID).ClusterName
         outputArray(outRow, 4) = nbTrans
         outputArray(outRow, 5) = volume
-        outputArray(outRow, 6) = Core_Engine.SafeVal(wsR.Cells(i, 12).Value)
+        outputArray(outRow, 6) = Core_Engine.SafeVal(wsR.Cells(i, SAFA_Common.RECONCIL_COL_SCORE).Value)
 
         clusters(clusterID).AccountCount = clusters(clusterID).AccountCount + 1
     Next i
@@ -422,30 +431,36 @@ Public Sub Finaliser_Rapport()
     ' ═══════════════════════════════════════════════════════════════
     If lr > 1 Then
         ' Ajouter colonne provision si pas présente
-        If wsR.Cells(1, 15).Value = "" Then
-            wsR.Cells(1, 15).Value = "Prov. IFRS9"
+        If wsR.Cells(1, SAFA_Common.RECONCIL_COL_PROVISION).Value = "" Then
+            wsR.Cells(1, SAFA_Common.RECONCIL_COL_PROVISION).Value = "Prov. IFRS9"
         End If
+
+        ' Buckets IFRS 9 lus dans la configuration
+        Dim cfg9 As Config_Manager.IFRS9Config
+        cfg9 = Config_Manager.GetIFRS9Config()
 
         For i = 2 To lr
             Dim age As Double, ecart As Double, provision As Double
 
-            age = Core_Engine.SafeVal(wsR.Cells(i, 8).Value)
-            ecart = Core_Engine.SafeVal(wsR.Cells(i, 5).Value)
+            age = Core_Engine.SafeVal(wsR.Cells(i, SAFA_Common.RECONCIL_COL_AGE_MAX).Value)
+            ecart = Core_Engine.SafeVal(wsR.Cells(i, SAFA_Common.RECONCIL_COL_ECART).Value)
 
-            ' Buckets IFRS 9
-            If age > 360 Then
-                provision = Abs(ecart) ' Stage 3 - 100%
-            ElseIf age > 180 Then
-                provision = Abs(ecart) * 0.5 ' Stage 2 - 50%
-            ElseIf age > 90 Then
-                provision = Abs(ecart) * 0.25 ' Stage 2 - 25%
-            ElseIf age > 30 Then
-                provision = Abs(ecart) * 0.1 ' Stage 1 - 10%
+            ' La provision ne concerne que les ecarts a analyser (pas les comptes OK)
+            If Core_Engine.SafeText(wsR.Cells(i, SAFA_Common.RECONCIL_COL_STATUT).Value) <> SAFA_Common.RECONCIL_STATUT_ECART Then
+                provision = 0
+            ElseIf age > cfg9.Stage3Days Then
+                provision = Abs(ecart) * cfg9.Stage3Rate      ' Stage 3
+            ElseIf age > cfg9.Stage2HighDays Then
+                provision = Abs(ecart) * cfg9.Stage2HighRate  ' Stage 2 haut
+            ElseIf age > cfg9.Stage2LowDays Then
+                provision = Abs(ecart) * cfg9.Stage2LowRate   ' Stage 2 bas
+            ElseIf age > cfg9.Stage1HighDays Then
+                provision = Abs(ecart) * cfg9.Stage1HighRate  ' Stage 1 haut
             Else
-                provision = Abs(ecart) * 0.01 ' Stage 1 - 1%
+                provision = Abs(ecart) * cfg9.Stage1LowRate   ' Stage 1 bas
             End If
 
-            wsR.Cells(i, 15).Value = provision
+            wsR.Cells(i, SAFA_Common.RECONCIL_COL_PROVISION).Value = provision
         Next i
     End If
 
@@ -490,10 +505,10 @@ Private Sub CreateDashboard(wsD As Worksheet, wsR As Worksheet, lr As Long)
     Dim totalEcart As Double, totalProvision As Double
 
     nbTotal = lr - 1
-    nbEcarts = Application.CountIf(wsR.Range("F:F"), "Ecart à analyser")
-    nbCritical = Application.CountIf(wsR.Range("N:N"), "CRITICAL")
-    totalEcart = Application.SumIf(wsR.Range("F:F"), "Ecart à analyser", wsR.Range("E:E"))
-    totalProvision = Application.WorksheetFunction.Sum(wsR.Range("O:O"))
+    nbEcarts = Application.CountIf(wsR.Columns(SAFA_Common.RECONCIL_COL_STATUT), SAFA_Common.RECONCIL_STATUT_ECART)
+    nbCritical = Application.CountIf(wsR.Columns(SAFA_Common.RECONCIL_COL_PRIORITY), "CRITICAL")
+    totalEcart = Application.SumIf(wsR.Columns(SAFA_Common.RECONCIL_COL_STATUT), SAFA_Common.RECONCIL_STATUT_ECART, wsR.Columns(SAFA_Common.RECONCIL_COL_ECART))
+    totalProvision = Application.WorksheetFunction.Sum(wsR.Columns(SAFA_Common.RECONCIL_COL_PROVISION))
 
     ' Zone KPIs
     wsD.Range("B5").Value = "INDICATEURS CLÉS"
@@ -545,45 +560,60 @@ DashError:
 End Sub
 
 Private Sub CreateTestSample(wsS As Worksheet, wsR As Worksheet, lr As Long)
-    Dim i As Long, sampleRow As Long
+    ' CORRIGE (B4): ne trie plus RECONCIL en place. Selection en memoire des 20 comptes
+    ' "Ecart a analyser" au score le plus eleve (selection partielle O(n*20)).
+    Dim data As Variant, used() As Boolean
+    Dim i As Long, k As Long, n As Long, bestIdx As Long, bestScore As Double, sc As Double
+    Dim sampleRow As Long
 
     ' En-têtes
     wsS.Range("A1:G1").Value = Array("Priorité", "Compte", "Libellé", "Écart", "Age Max", "Risk Score", "Action Requise")
     FormatHeader wsS.Range("A1:G1")
 
-    ' Trier par Risk Score décroissant
-    wsR.Range("A1:O" & lr).Sort Key1:=wsR.Range("L2"), Order1:=xlDescending, Header:=xlYes
+    If lr < 2 Then Exit Sub
+    data = wsR.Range(wsR.Cells(2, 1), wsR.Cells(lr, SAFA_Common.RECONCIL_COL_PRIORITY)).Value
+    n = UBound(data, 1)
+    ReDim used(1 To n)
 
-    ' Sélectionner top 20
     sampleRow = 2
-    For i = 2 To lr
-        If wsR.Cells(i, 6).Value = "Ecart à analyser" And sampleRow <= 21 Then
-            wsS.Cells(sampleRow, 1).Value = wsR.Cells(i, 14).Value ' Priority
-            wsS.Cells(sampleRow, 2).Value = wsR.Cells(i, 1).Value
-            wsS.Cells(sampleRow, 3).Value = wsR.Cells(i, 2).Value
-            wsS.Cells(sampleRow, 4).Value = wsR.Cells(i, 5).Value
-            wsS.Cells(sampleRow, 5).Value = wsR.Cells(i, 8).Value
-            wsS.Cells(sampleRow, 6).Value = wsR.Cells(i, 12).Value
+    For k = 1 To 20
+        bestIdx = 0: bestScore = -1
+        For i = 1 To n
+            If Not used(i) Then
+                If Core_Engine.SafeText(data(i, SAFA_Common.RECONCIL_COL_STATUT)) = SAFA_Common.RECONCIL_STATUT_ECART Then
+                    sc = Core_Engine.SafeVal(data(i, SAFA_Common.RECONCIL_COL_SCORE))
+                    If sc > bestScore Then bestScore = sc: bestIdx = i
+                End If
+            End If
+        Next i
+        If bestIdx = 0 Then Exit For
+        used(bestIdx) = True
 
-            ' Recommandation automatique
-            Select Case wsR.Cells(i, 14).Value
-                Case "CRITICAL"
-                    wsS.Cells(sampleRow, 7).Value = "Investigation immédiate requise"
-                    wsS.Cells(sampleRow, 1).Interior.Color = RGB(255, 0, 0)
-                    wsS.Cells(sampleRow, 1).Font.Color = vbWhite
-                Case "HIGH"
-                    wsS.Cells(sampleRow, 7).Value = "Analyser sous 48h"
-                    wsS.Cells(sampleRow, 1).Interior.Color = RGB(255, 165, 0)
-                Case "MEDIUM"
-                    wsS.Cells(sampleRow, 7).Value = "Analyser cette semaine"
-                    wsS.Cells(sampleRow, 1).Interior.Color = RGB(255, 255, 0)
-                Case Else
-                    wsS.Cells(sampleRow, 7).Value = "Suivi standard"
-            End Select
+        wsS.Cells(sampleRow, 1).Value = data(bestIdx, SAFA_Common.RECONCIL_COL_PRIORITY)
+        wsS.Cells(sampleRow, 2).Value = "'" & Core_Engine.SafeText(data(bestIdx, SAFA_Common.RECONCIL_COL_COMPTE))
+        wsS.Cells(sampleRow, 3).Value = data(bestIdx, SAFA_Common.RECONCIL_COL_LIBELLE)
+        wsS.Cells(sampleRow, 4).Value = data(bestIdx, SAFA_Common.RECONCIL_COL_ECART)
+        wsS.Cells(sampleRow, 5).Value = data(bestIdx, SAFA_Common.RECONCIL_COL_AGE_MAX)
+        wsS.Cells(sampleRow, 6).Value = data(bestIdx, SAFA_Common.RECONCIL_COL_SCORE)
 
-            sampleRow = sampleRow + 1
-        End If
-    Next i
+        ' Recommandation automatique
+        Select Case UCase(Core_Engine.SafeText(data(bestIdx, SAFA_Common.RECONCIL_COL_PRIORITY)))
+            Case "CRITICAL"
+                wsS.Cells(sampleRow, 7).Value = "Investigation immédiate requise"
+                wsS.Cells(sampleRow, 1).Interior.Color = RGB(255, 0, 0)
+                wsS.Cells(sampleRow, 1).Font.Color = vbWhite
+            Case "HIGH"
+                wsS.Cells(sampleRow, 7).Value = "Analyser sous 48h"
+                wsS.Cells(sampleRow, 1).Interior.Color = RGB(255, 165, 0)
+            Case "MEDIUM"
+                wsS.Cells(sampleRow, 7).Value = "Analyser cette semaine"
+                wsS.Cells(sampleRow, 1).Interior.Color = RGB(255, 255, 0)
+            Case Else
+                wsS.Cells(sampleRow, 7).Value = "Suivi standard"
+        End Select
+
+        sampleRow = sampleRow + 1
+    Next k
 
     wsS.Range("D2:D" & sampleRow).NumberFormat = "#,##0"
     wsS.Columns("A:G").AutoFit
@@ -681,10 +711,6 @@ Private Sub AddAIAlert(ByVal ws As Worksheet, ByRef r As Long, _
 End Sub
 
 Private Sub FormatHeader(rng As Range)
-    With rng
-        .Font.Bold = True
-        .Interior.Color = RGB(0, 51, 102)
-        .Font.Color = vbWhite
-        .HorizontalAlignment = xlCenter
-    End With
+    ' Delegue a SAFA_Common (implementation unique)
+    SAFA_Common.FormatHeader rng
 End Sub

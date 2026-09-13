@@ -247,21 +247,8 @@ Public Function FeuilleExiste(nom As String) As Boolean
 End Function
 
 Public Function GetOrCreateSheet(nom As String, Optional clearIfExists As Boolean = False) As Worksheet
-    ' Récupère ou crée une feuille de manière sécurisée
-    Dim ws As Worksheet
-
-    On Error Resume Next
-    Set ws = ThisWorkbook.Sheets(nom)
-    On Error GoTo 0
-
-    If ws Is Nothing Then
-        Set ws = ThisWorkbook.Sheets.Add
-        ws.name = nom
-    ElseIf clearIfExists Then
-        ws.Cells.Clear
-    End If
-
-    Set GetOrCreateSheet = ws
+    ' Delegue a SAFA_Common (implementation unique, nom tronque a 31 caracteres)
+    Set GetOrCreateSheet = SAFA_Common.GetOrCreateSheet(nom, clearIfExists)
 End Function
 
 ' ==============================================================================
@@ -845,15 +832,24 @@ Private Function DetectTransaction(ws As Worksheet, rowNum As Long) As Variant
         If IsDate(cellVal) And Not IsError(cellVal) Then
             transDate = CDate(cellVal)
 
-            ' Chercher l'âge dans les colonnes suivantes
-            transAge = 0
-            Dim k As Integer
+            ' Chercher l'âge dans les colonnes suivantes: entier plausible (0..3650 jours).
+            ' CORRIGE (B5): l'ancien code prenait la premiere valeur > 0, donc le MONTANT
+            ' quand la colonne age valait 0 ou etait vide. A defaut, age = aujourd'hui - date.
+            transAge = -1
+            Dim k As Integer, cand As Double
             For k = j + 1 To j + 4
-                If SafeVal(ws.Cells(rowNum, k).Value) >= 0 Then
-                    transAge = SafeVal(ws.Cells(rowNum, k).Value)
-                    If transAge > 0 Then Exit For
+                If Not IsEmpty(ws.Cells(rowNum, k).Value) And IsNumeric(ws.Cells(rowNum, k).Value) Then
+                    cand = SafeVal(ws.Cells(rowNum, k).Value)
+                    If cand >= 0 And cand <= 3650 And cand = Int(cand) Then
+                        transAge = cand
+                        Exit For
+                    End If
                 End If
             Next k
+            If transAge < 0 Then
+                transAge = DateDiff("d", transDate, Date)
+                If transAge < 0 Then transAge = 0
+            End If
 
             DetectTransaction = Array(transDate, transAge)
             Exit Function
@@ -960,7 +956,7 @@ Public Sub ConstruireRapprochement()
         End If
 
         ' Calculer Risk Score
-        riskScore = CalculateRiskScore(ecart, SafeVal(wsGL.Cells(i, 7).Value), _
+        riskScore = SAFA_Common.CalculateRiskScore(ecart, SafeVal(wsGL.Cells(i, 7).Value), _
                                         SafeVal(wsGL.Cells(i, 6).Value), status, riskFactors)
 
         ' Vérifier exclusion
@@ -983,7 +979,7 @@ Public Sub ConstruireRapprochement()
         outputArray(outRow, 11) = GetAccountType(keyGL)
         outputArray(outRow, 12) = riskScore
         outputArray(outRow, 13) = riskFactors
-        outputArray(outRow, 14) = GetPriority(riskScore)
+        outputArray(outRow, 14) = SAFA_Common.GetPriority(riskScore)
 
 NextGL:
     Next i
@@ -1000,7 +996,7 @@ NextGL:
             status = "Présent Bal / Absent GL"
         End If
 
-        riskScore = CalculateRiskScore(-balBal, 0, 0, status, riskFactors)
+        riskScore = SAFA_Common.CalculateRiskScore(-balBal, 0, 0, status, riskFactors)
 
         If IsExcluded(CStr(vKey), SafeText(wsBal.Cells(rowBal, 2).Value), exclusionPatterns) Then
             status = "Non-Proofable (Auto)"
@@ -1021,7 +1017,7 @@ NextGL:
         outputArray(outRow, 11) = GetAccountType(CStr(vKey))
         outputArray(outRow, 12) = riskScore
         outputArray(outRow, 13) = riskFactors
-        outputArray(outRow, 14) = GetPriority(riskScore)
+        outputArray(outRow, 14) = SAFA_Common.GetPriority(riskScore)
     Next vKey
 
     ' Écrire résultats
@@ -1043,7 +1039,8 @@ ReconcilError:
 End Sub
 
 Private Function NormalizeAccountKey(acct As String) As String
-    NormalizeAccountKey = UCase(Trim(Replace(Replace(acct, " ", ""), "'", "")))
+    ' Delegue a SAFA_Common (cle de matching unique pour Balance et GL)
+    NormalizeAccountKey = SAFA_Common.NormalizeAccountKey(acct)
 End Function
 
 Private Function DetermineStatus(balGL As Double, balBal As Double, ecart As Double, tolerance As Double) As String
@@ -1056,82 +1053,12 @@ Private Function DetermineStatus(balGL As Double, balBal As Double, ecart As Dou
     End If
 End Function
 
-Private Function CalculateRiskScore(ecart As Double, ageMax As Double, nbTrans As Long, status As String, ByRef factors As String) As Integer
-    ' Calcul du score de risque (0-100)
-    Dim score As Integer
-    factors = ""
-
-    score = 0
-
-    ' Facteur 1: Montant de l'écart
-    If Abs(ecart) > 10000000 Then
-        score = score + 30
-        factors = factors & "Ecart >10M;"
-    ElseIf Abs(ecart) > 1000000 Then
-        score = score + 20
-        factors = factors & "Ecart >1M;"
-    ElseIf Abs(ecart) > 100000 Then
-        score = score + 10
-        factors = factors & "Ecart >100K;"
-    End If
-
-    ' Facteur 2: Âge
-    If ageMax > 365 Then
-        score = score + 30
-        factors = factors & "Age >1an;"
-    ElseIf ageMax > 180 Then
-        score = score + 20
-        factors = factors & "Age >6mois;"
-    ElseIf ageMax > 90 Then
-        score = score + 10
-        factors = factors & "Age >90j;"
-    End If
-
-    ' Facteur 3: Statut
-    If status = "Présent GL / Absent Bal" Or status = "Présent Bal / Absent GL" Then
-        score = score + 20
-        factors = factors & "Orphelin;"
-    End If
-
-    ' Facteur 4: Volume transactions
-    If nbTrans > 100 Then
-        score = score + 10
-        factors = factors & "Volume élevé;"
-    End If
-
-    ' Plafonner à 100
-    If score > 100 Then score = 100
-
-    CalculateRiskScore = score
-End Function
 
 Private Function GetAccountType(acctNum As String) As String
-    ' Classification par classe comptable OHADA/SYSCOHADA
-    Dim firstChar As String
-    firstChar = Left(acctNum, 1)
-
-    Select Case firstChar
-        Case "1": GetAccountType = "Capital"
-        Case "2": GetAccountType = "Immobilisation"
-        Case "3": GetAccountType = "Stock"
-        Case "4": GetAccountType = "Tiers"
-        Case "5": GetAccountType = "Trésorerie"
-        Case "6": GetAccountType = "Charges"
-        Case "7": GetAccountType = "Produits"
-        Case "8": GetAccountType = "Hors Bilan"
-        Case "9": GetAccountType = "Analytique"
-        Case Else: GetAccountType = "Autre"
-    End Select
+    ' Delegue a SAFA_Common.GetAccountClass (classification OHADA unique)
+    GetAccountType = SAFA_Common.GetAccountClass(acctNum)
 End Function
 
-Private Function GetPriority(riskScore As Integer) As String
-    Select Case riskScore
-        Case Is >= 70: GetPriority = "CRITICAL"
-        Case Is >= 50: GetPriority = "HIGH"
-        Case Is >= 30: GetPriority = "MEDIUM"
-        Case Else: GetPriority = "LOW"
-    End Select
-End Function
 
 Private Function IsExcluded(acct As String, name As String, patterns As Variant) As Boolean
     If IsEmpty(patterns) Then Exit Function
@@ -1151,12 +1078,8 @@ Private Function IsExcluded(acct As String, name As String, patterns As Variant)
 End Function
 
 Private Sub FormatHeader(rng As Range)
-    With rng
-        .Font.Bold = True
-        .Interior.Color = RGB(0, 51, 102)
-        .Font.Color = vbWhite
-        .HorizontalAlignment = xlCenter
-    End With
+    ' Delegue a SAFA_Common (implementation unique)
+    SAFA_Common.FormatHeader rng
 End Sub
 
 Private Sub ApplyConditionalFormatting(ws As Worksheet, lastRow As Long)

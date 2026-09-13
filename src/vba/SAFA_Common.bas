@@ -537,11 +537,27 @@ Public Function CalculateRiskScore(ecart As Double, ageMax As Double, nbTrans As
     factors = ""
     score = 0
 
-    ' Poids par défaut ou personnalisés
+    ' Paliers de montant et d'age lus dans la configuration (settings.json / CONFIG_DATA)
+    Dim cfgR As Config_Manager.RiskScoringConfig
+    Dim tAmt1 As Double, tAmt2 As Double, tAmt3 As Double
+    Dim tAge1 As Double, tAge2 As Double, tAge3 As Double
+    cfgR = Config_Manager.GetRiskScoringConfig()
+    tAmt1 = cfgR.AmountTier1: tAmt2 = cfgR.AmountTier2: tAmt3 = cfgR.AmountTier3
+    tAge1 = cfgR.AgeTier1: tAge2 = cfgR.AgeTier2: tAge3 = cfgR.AgeTier3
+    If tAmt1 <= 0 Then tAmt1 = 10000000: tAmt2 = 1000000: tAmt3 = 100000
+    If tAge1 <= 0 Then tAge1 = 365: tAge2 = 180: tAge3 = 90
+
+    ' Poids: configuration (WeightAmount / WeightAge repartis 100% / 66% / 33%), ou personnalises
     If IsMissing(customWeights) Then
-        wEcart10M = 30: wEcart1M = 20: wEcart100K = 10
-        wAge1Y = 30: wAge6M = 20: wAge90D = 10
-        wOrphelin = 20: wVolume = 10
+        If cfgR.WeightAmount > 0 Then
+            wEcart10M = cfgR.WeightAmount: wEcart1M = Round(cfgR.WeightAmount * 2 / 3): wEcart100K = Round(cfgR.WeightAmount / 3)
+            wAge1Y = cfgR.WeightAge: wAge6M = Round(cfgR.WeightAge * 2 / 3): wAge90D = Round(cfgR.WeightAge / 3)
+            wOrphelin = cfgR.WeightOrphan: wVolume = cfgR.WeightVolume
+        Else
+            wEcart10M = 30: wEcart1M = 20: wEcart100K = 10
+            wAge1Y = 30: wAge6M = 20: wAge90D = 10
+            wOrphelin = 20: wVolume = 10
+        End If
     Else
         ' customWeights = Array(wEcart10M, wEcart1M, wEcart100K, wAge1Y, wAge6M, wAge90D, wOrphelin, wVolume)
         wEcart10M = customWeights(0): wEcart1M = customWeights(1): wEcart100K = customWeights(2)
@@ -550,27 +566,27 @@ Public Function CalculateRiskScore(ecart As Double, ageMax As Double, nbTrans As
     End If
 
     ' Facteur 1: Montant de l'écart
-    If Abs(ecart) > 10000000 Then
+    If Abs(ecart) > tAmt1 Then
         score = score + wEcart10M
-        factors = factors & "Ecart >10M;"
-    ElseIf Abs(ecart) > 1000000 Then
+        factors = factors & "Ecart >" & Format(tAmt1 / 1000000, "0") & "M;"
+    ElseIf Abs(ecart) > tAmt2 Then
         score = score + wEcart1M
-        factors = factors & "Ecart >1M;"
-    ElseIf Abs(ecart) > 100000 Then
+        factors = factors & "Ecart >" & Format(tAmt2 / 1000000, "0") & "M;"
+    ElseIf Abs(ecart) > tAmt3 Then
         score = score + wEcart100K
-        factors = factors & "Ecart >100K;"
+        factors = factors & "Ecart >" & Format(tAmt3 / 1000, "0") & "K;"
     End If
 
     ' Facteur 2: Âge
-    If ageMax > 365 Then
+    If ageMax > tAge1 Then
         score = score + wAge1Y
-        factors = factors & "Age >1an;"
-    ElseIf ageMax > 180 Then
+        factors = factors & "Age >" & Format(tAge1, "0") & "j;"
+    ElseIf ageMax > tAge2 Then
         score = score + wAge6M
-        factors = factors & "Age >6mois;"
-    ElseIf ageMax > 90 Then
+        factors = factors & "Age >" & Format(tAge2, "0") & "j;"
+    ElseIf ageMax > tAge3 Then
         score = score + wAge90D
-        factors = factors & "Age >90j;"
+        factors = factors & "Age >" & Format(tAge3, "0") & "j;"
     End If
 
     ' Facteur 3: Statut orphelin
@@ -592,11 +608,22 @@ Public Function CalculateRiskScore(ecart As Double, ageMax As Double, nbTrans As
 End Function
 
 Public Function GetPriority(riskScore As Integer) As String
-    If riskScore >= RISK_CRITICAL_THRESHOLD Then
+    ' Seuils de priorite lus dans la configuration (defauts: 70 / 50 / 30)
+    Dim cfg As Config_Manager.RiskScoringConfig
+    Dim tCrit As Integer, tHigh As Integer, tMed As Integer
+    On Error Resume Next
+    cfg = Config_Manager.GetRiskScoringConfig()
+    On Error GoTo 0
+    tCrit = cfg.ThresholdCritical: tHigh = cfg.ThresholdHigh: tMed = cfg.ThresholdMedium
+    If tCrit <= 0 Or tHigh <= 0 Or tMed <= 0 Or tCrit <= tHigh Or tHigh <= tMed Then
+        tCrit = RISK_CRITICAL_THRESHOLD: tHigh = RISK_HIGH_THRESHOLD: tMed = RISK_MEDIUM_THRESHOLD
+    End If
+
+    If riskScore >= tCrit Then
         GetPriority = "CRITICAL"
-    ElseIf riskScore >= RISK_HIGH_THRESHOLD Then
+    ElseIf riskScore >= tHigh Then
         GetPriority = "HIGH"
-    ElseIf riskScore >= RISK_MEDIUM_THRESHOLD Then
+    ElseIf riskScore >= tMed Then
         GetPriority = "MEDIUM"
     Else
         GetPriority = "LOW"

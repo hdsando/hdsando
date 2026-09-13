@@ -21,17 +21,18 @@ Date : septembre 2026 · Périmètre : `src/vba`, `install`, `config` · Méthod
 | A11 | `Cells.Clear` sur une feuille contenant un TCD → erreur 1004 | Régénération du dashboard impossible après `Advanced_AI.Finaliser_Rapport` | `PrepareReportSheet` supprime TCD et graphiques avant effacement |
 | A12 | `Workbook_Open` masquait **toutes** les feuilles (`VeryHidden`) puis lançait un UserForm inexistant via `OnTime` | Classeur inutilisable à l'ouverture | Ouverture sur MENU, seules les feuilles techniques masquées |
 
-### 1.2 Défauts de conception (restants, priorisés)
+### 1.2 Défauts de conception
 
-| # | Constat | Risque | Recommandation |
+| # | Constat | Risque | Statut |
 |---|---|---|---|
-| B1 | `CalculateRiskScore` existe en **deux versions** (`Core_Engine` privée, `SAFA_Common` publique avec pondérations) | Deux résultats possibles pour un même compte selon l'appelant | Faire déléguer `Core_Engine` à `SAFA_Common` après comparaison ligne à ligne des barèmes |
-| B2 | Seuils codés en dur (`Private Const`) dans `Forensic_Rules`, `Regulatory_Compliance`, `Advanced_AI` alors que `Config_Manager` les expose | Changer `settings.json` ne change pas le comportement | Lire la config au début de chaque procédure publique (fait dans `Report_Generator`, à généraliser) ; le parseur JSON doit devenir sensible aux sections (`threshold_critical` existe dans plusieurs) |
-| B3 | `GetAccountType` / `GetAccountClass`, `FormatHeader` ×3, `NormalizeAccountKey` ×2 | Dérive silencieuse | Une implémentation dans `SAFA_Common`, délégations ailleurs |
-| B4 | `Advanced_AI.CreateTestSample` **trie `RECONCIL` en place** | Effet de bord sur la feuille maîtresse | Réutiliser `GetTopAccountsByScore` |
-| B5 | `DetectTransaction` prend la première valeur numérique > 0 après la date comme « âge » | Si l'âge vaut 0 (écriture du jour), le montant est lu comme âge | Détecter la colonne âge par en-tête ou borner (âge < 3 650) |
-| B6 | Journal d'audit : la vérification recalcule avec le provider courant | Un journal écrit sous .NET n'est pas vérifiable sur un poste sans .NET | Stocker le nom du provider dans chaque entrée |
-| B7 | Volumes : VBA plafonne autour de 500 k lignes, mono-utilisateur | Non adapté à un réseau entier | Horizon : moteur Python + Excel comme interface, l'architecture modulaire le permet |
+| B1 | `CalculateRiskScore` existait en **deux versions** (`Core_Engine` privée, `SAFA_Common` publique) | Deux résultats possibles pour un même compte | **Corrigé** : barèmes comparés ligne à ligne (identiques), `Core_Engine` délègue ; `GetPriority` unique |
+| B2 | Seuils codés en dur (`Private Const`) dans `Forensic_Rules`, `Regulatory_Compliance`, `Advanced_AI` | Changer `settings.json` ne changeait rien | **Corrigé** : `LoadForensicConfig` / `LoadRegulatoryConfig`, Z-Score et IFRS 9 lus dans `Config_Manager` ; parseur JSON sensible aux sections (`JSONSection`) couvrant tous les champs ; paliers et poids du scoring configurables |
+| B3 | `GetAccountType` / `GetAccountClass`, `FormatHeader` ×4, `NormalizeAccountKey` ×2, `GetOrCreateSheet` ×2 | Dérive silencieuse | **Corrigé** : une implémentation dans `SAFA_Common`, délégations partout |
+| B4 | `Advanced_AI.CreateTestSample` **triait `RECONCIL` en place** | Effet de bord sur la feuille maîtresse | **Corrigé** : sélection partielle en mémoire, restreinte aux « Ecart à analyser » |
+| B5 | `DetectTransaction` prenait la première valeur numérique > 0 après la date comme « âge » | Montant lu comme âge quand la colonne âge valait 0 | **Corrigé** : âge = entier plausible 0–3 650 j, sinon `Date − date d'écriture` |
+| B6 | Journal d'audit : la vérification recalcule avec le provider courant | Journal écrit sous .NET non vérifiable sans .NET | Ouvert — stocker le nom du provider dans chaque entrée |
+| B7 | Volumes : VBA plafonne autour de 500 k lignes, mono-utilisateur | Non adapté à un réseau entier | Horizon : moteur Python + Excel comme interface |
+| B8 | Provision IFRS 9 calculée sur **tous** les comptes, y compris rapprochés | Provision surestimée | **Corrigé** : uniquement sur les « Ecart à analyser » |
 
 ## 2. Ce qui en fait un outil de référence — feuille de route
 
