@@ -737,3 +737,70 @@ Public Sub AfficherAide()
            "et verifie que chaque anomalie injectee est detectee (feuille TEST_RESULTS).", _
            vbInformation, "Aide S.A.F.A"
 End Sub
+
+'===============================================================================
+' GL MONITORING (regles de la Knowledge Sharing Session DAI du 09/09/2026)
+'===============================================================================
+
+Public Sub LancerGLMonitoring()
+    On Error GoTo ErrHandler
+    If Not Core_Engine.FeuilleExiste("BALANCE_DATA") Then
+        MsgBox "Lancez d'abord l'analyse complete (BALANCE_DATA requis).", vbExclamation, "GL Monitoring": Exit Sub
+    End If
+    Application.ScreenUpdating = False
+    Call GL_Monitoring.Lancer_GL_Monitoring(True)
+    Application.ScreenUpdating = True
+    Call ActiverFeuille("GL_MONITORING")
+    On Error Resume Next
+    Call SAFA_Menu.RefreshStatus
+    Exit Sub
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "GL Monitoring: " & Err.Description, vbCritical, "S.A.F.A"
+End Sub
+
+Public Sub LancerQualiteProofs()
+    On Error GoTo ErrHandler
+    Call Proof_Quality.AnalyserDossierProofs
+    Call ActiverFeuille("PROOF_QUALITY")
+    Exit Sub
+ErrHandler:
+    MsgBox "Qualite des proofs: " & Err.Description, vbCritical, "S.A.F.A"
+End Sub
+
+Public Sub ImporterBalancePrecedente()
+    ' Balance de la periode precedente (meme format que la Balance) -> BALANCE_PREV_RAW (variations GLM-007)
+    Dim filePath As String, result As Data_Ingestion.ImportResult
+    filePath = Application.GetOpenFilename( _
+        FileFilter:="Fichiers Excel (*.xlsx;*.xls;*.xlsm),*.xlsx;*.xls;*.xlsm,Fichiers CSV (*.csv),*.csv,Tous (*.*),*.*", _
+        Title:="Selectionner la Balance de la periode PRECEDENTE (N-1)")
+    If filePath = "False" Or filePath = "" Then Exit Sub
+    Application.ScreenUpdating = False
+    result = Data_Ingestion.ImportFile(filePath, "BALANCE_PREV_RAW", True)
+    Application.ScreenUpdating = True
+    If result.Success Then
+        MsgBox "Balance N-1 importee: " & result.RowsImported & " lignes." & vbCrLf & "Relancez GL Monitoring pour evaluer les variations de charges.", vbInformation, "S.A.F.A"
+        Call Core_Engine.WriteToAuditLog("IMPORT", "Balance N-1 importee: " & result.RowsImported & " lignes")
+    Else
+        MsgBox "Erreur lors de l'import:" & vbCrLf & result.Errors, vbCritical, "Erreur Import"
+    End If
+End Sub
+
+Public Sub ImporterListeProofables()
+    ' Liste des comptes proofables tenue par le Controle Interne (colonne A = numero de compte) -> PROOFABLE_LIST
+    Dim filePath As String, result As Data_Ingestion.ImportResult
+    filePath = Application.GetOpenFilename( _
+        FileFilter:="Fichiers Excel (*.xlsx;*.xls;*.xlsm),*.xlsx;*.xls;*.xlsm,Fichiers CSV (*.csv),*.csv,Tous (*.*),*.*", _
+        Title:="Selectionner la liste des comptes proofables du Controle Interne")
+    If filePath = "False" Or filePath = "" Then Exit Sub
+    Application.ScreenUpdating = False
+    result = Data_Ingestion.ImportFile(filePath, "PROOFABLE_LIST", True)
+    Application.ScreenUpdating = True
+    If result.Success Then
+        MsgBox "Liste CI importee: " & result.RowsImported & " lignes (colonne A = numero de compte)." & vbCrLf & _
+               "Relancez GL Monitoring pour verifier l'exhaustivite (GLM-001).", vbInformation, "S.A.F.A"
+        Call Core_Engine.WriteToAuditLog("IMPORT", "Liste comptes proofables CI importee: " & result.RowsImported & " lignes")
+    Else
+        MsgBox "Erreur lors de l'import:" & vbCrLf & result.Errors, vbCritical, "Erreur Import"
+    End If
+End Sub

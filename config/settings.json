@@ -10,7 +10,8 @@
     "default_currency": "XAF",
     "default_tolerance": 100,
     "max_rows_memory": 500000,
-    "default_sol_id": "799"
+    "default_sol_id": "799",
+    "account_normalization": "SOL_INJECT"
   },
 
   "currencies": {
@@ -122,6 +123,58 @@
       "error": "#FF0000",
       "primary": "#003366",
       "neutral": "#808080"
+    }
+  },
+
+  "gl_monitoring": {
+    "_source": "Knowledge Sharing Session DAI - GL Monitoring, 09/09/2026 (CR H. Sando) et support Groupe GL Integrity & Proof Review",
+    "thresholds": {
+      "transit_zero_days": 1,
+      "suspense_rating_days": 5,
+      "prepaid_regularization_days": 30,
+      "expense_variation_warn": 0.20,
+      "expense_variation_critical": 0.50,
+      "variation_min_amount": 100000,
+      "cash_limit": 5000000,
+      "vault_limit": 0,
+      "overaged_tier1_days": 90,
+      "overaged_tier2_days": 180,
+      "overaged_tier3_days": 360,
+      "debit_positive": 1
+    },
+    "rating": {
+      "_note": "Grille a verifier avec le template CI en vigueur (grille revisee du 28/02/2026: 2,5 pts par tranche de 7 jours)",
+      "points_per_tranche": 2.5,
+      "tranche_days": 7,
+      "points_proof_missing": 5,
+      "points_sense": 2,
+      "points_prepaid": 3,
+      "points_cash_limit": 5,
+      "points_revenue_debit": 3,
+      "points_overaged": 2,
+      "points_universe": 1
+    },
+    "nomenclature": {
+      "currency_prefixes": "XAF|XOF|USD|EUR|GBP",
+      "pl_prefix": "PAL",
+      "system_prefixes": "IENC|RFI|FINNONE|POSITION FCY|POSITION LCY",
+      "interbranch_prefix": "INTERSOL",
+      "non_proofable_classes": "8|9",
+      "pl_classes": "6|7",
+      "auto_user_ids": "CDCI|SYSTEM|BATCH|AUTO"
+    },
+    "keywords": {
+      "transit": "TRANSIT",
+      "proxy": "PROXY",
+      "suspense": "SUSPENS|ATTENTE|UNCLAIMED|NON RECLAM|SUNDRY",
+      "prepaid": "PREPAID|D AVANCE|D'AVANCE|PAYE D AVANCE",
+      "cash": "CAISSE|CASH|TILL|ATM|GAB|TPE|POS ",
+      "vault": "COFFRE|VAULT",
+      "difference": "ECART|OVERAGE|SHORTAGE|DIFFERENCE",
+      "revenue": "INCOME|REVENUE|COMMISSION|FEE|PRODUIT|INTERET RECU|INTEREST RECEIVED|PENALT",
+      "expense": "EXPENSE|CHARGE|SALAIRE|STAFF|RENT|LOYER|DEPRECIATION|AMORTISSEMENT|OPEX|INTEREST PAID|INTERET PAYE",
+      "asset": "RECEIVABLE|CREANCE|DEBTOR|CLIENT|STOCK|IMMOBILISATION|BANQUE|BANK|BEAC",
+      "liability": "SUPPLIER|FOURNISSEUR|CHEQUE|PAYABLE|DEPOSIT|DEPOT|COLLECTION|COMPENSATION|CAPITAL"
     }
   },
 

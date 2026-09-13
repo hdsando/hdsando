@@ -22,6 +22,7 @@ Public Type GeneralConfig
     DefaultTolerance As Double
     MaxRowsMemory As Long
     DefaultSolId As String
+    AccountNormalization As String   ' SOL_INJECT (Finacle UBA: 3 car. & SOL & sous-code & suffixe) ou NONE
 End Type
 
 Public Type ForensicConfig
@@ -78,6 +79,52 @@ Public Type IFRS9Config
     Stage1LowRate As Double
 End Type
 
+Public Type GLMonitoringConfig
+    ' Seuils (Knowledge Sharing Session DAI 09/09/2026)
+    TransitZeroDays As Long
+    SuspenseRatingDays As Long
+    PrepaidRegularizationDays As Long
+    ExpenseVariationWarn As Double
+    ExpenseVariationCritical As Double
+    VariationMinAmount As Double
+    CashLimit As Double
+    VaultLimit As Double
+    OverAgedTier1 As Long
+    OverAgedTier2 As Long
+    OverAgedTier3 As Long
+    DebitPositive As Boolean
+    ' Grille de rating (a verifier avec le template CI en vigueur)
+    RatingPointsPerTranche As Double
+    RatingTrancheDays As Long
+    RatingPointsProofMissing As Double
+    RatingPointsSense As Double
+    RatingPointsPrepaid As Double
+    RatingPointsCashLimit As Double
+    RatingPointsRevenueDebit As Double
+    RatingPointsOverAged As Double
+    RatingPointsUniverse As Double
+    ' Nomenclature Finacle (listes separees par |)
+    CurrencyPrefixes As String
+    PLPrefix As String
+    SystemPrefixes As String
+    InterbranchPrefix As String
+    NonProofableClasses As String
+    PLClasses As String
+    AutoUserIds As String
+    ' Mots-cles de nature / famille
+    KwTransit As String
+    KwProxy As String
+    KwSuspense As String
+    KwPrepaid As String
+    KwCash As String
+    KwVault As String
+    KwDifference As String
+    KwRevenue As String
+    KwExpense As String
+    KwAsset As String
+    KwLiability As String
+End Type
+
 Public Type UIConfig
     DefaultZoom As Integer
     ColorSuccess As String
@@ -94,6 +141,7 @@ Public Type FullConfig
     RiskScoring As RiskScoringConfig
     IFRS9 As IFRS9Config
     UI As UIConfig
+    GLM As GLMonitoringConfig
 End Type
 
 ' ===== VARIABLES MODULE =====
@@ -152,6 +200,7 @@ Private Sub SetDefaultConfiguration()
         .DefaultTolerance = 100
         .MaxRowsMemory = 500000
         .DefaultSolId = "799"
+        .AccountNormalization = "SOL_INJECT"
     End With
 
     ' Forensic
@@ -212,6 +261,49 @@ Private Sub SetDefaultConfiguration()
         .Stage1LowRate = 0.01
     End With
 
+    ' GL Monitoring
+    With mConfig.GLM
+        .TransitZeroDays = 1
+        .SuspenseRatingDays = 5
+        .PrepaidRegularizationDays = 30
+        .ExpenseVariationWarn = 0.2
+        .ExpenseVariationCritical = 0.5
+        .VariationMinAmount = 100000
+        .CashLimit = 5000000
+        .VaultLimit = 0
+        .OverAgedTier1 = 90
+        .OverAgedTier2 = 180
+        .OverAgedTier3 = 360
+        .DebitPositive = True
+        .RatingPointsPerTranche = 2.5
+        .RatingTrancheDays = 7
+        .RatingPointsProofMissing = 5
+        .RatingPointsSense = 2
+        .RatingPointsPrepaid = 3
+        .RatingPointsCashLimit = 5
+        .RatingPointsRevenueDebit = 3
+        .RatingPointsOverAged = 2
+        .RatingPointsUniverse = 1
+        .CurrencyPrefixes = "XAF|XOF|USD|EUR|GBP"
+        .PLPrefix = "PAL"
+        .SystemPrefixes = "IENC|RFI|FINNONE|POSITION FCY|POSITION LCY"
+        .InterbranchPrefix = "INTERSOL"
+        .NonProofableClasses = "8|9"
+        .PLClasses = "6|7"
+        .AutoUserIds = "CDCI|SYSTEM|BATCH|AUTO"
+        .KwTransit = "TRANSIT"
+        .KwProxy = "PROXY"
+        .KwSuspense = "SUSPENS|ATTENTE|UNCLAIMED|NON RECLAM|SUNDRY"
+        .KwPrepaid = "PREPAID|D AVANCE|D'AVANCE|PAYE D AVANCE"
+        .KwCash = "CAISSE|CASH|TILL|ATM|GAB|TPE|POS "
+        .KwVault = "COFFRE|VAULT"
+        .KwDifference = "ECART|OVERAGE|SHORTAGE|DIFFERENCE"
+        .KwRevenue = "INCOME|REVENUE|COMMISSION|FEE|PRODUIT|INTERET RECU|INTEREST RECEIVED|PENALT"
+        .KwExpense = "EXPENSE|CHARGE|SALAIRE|STAFF|RENT|LOYER|DEPRECIATION|AMORTISSEMENT|OPEX|INTEREST PAID|INTERET PAYE"
+        .KwAsset = "RECEIVABLE|CREANCE|DEBTOR|CLIENT|STOCK|IMMOBILISATION|BANQUE|BANK|BEAC"
+        .KwLiability = "SUPPLIER|FOURNISSEUR|CHEQUE|PAYABLE|DEPOSIT|DEPOT|COLLECTION|COMPENSATION|CAPITAL"
+    End With
+
     ' UI
     With mConfig.UI
         .DefaultZoom = 85
@@ -256,6 +348,7 @@ Private Sub LoadFromJSONFile(filePath As String)
         .DefaultCurrency = ExtractJSONString(sec, "default_currency", .DefaultCurrency)
         .MaxRowsMemory = ExtractJSONNumber(sec, "max_rows_memory", .MaxRowsMemory)
         .DefaultSolId = ExtractJSONString(sec, "default_sol_id", .DefaultSolId)
+        .AccountNormalization = ExtractJSONString(sec, "account_normalization", .AccountNormalization)
     End With
 
     ' Forensic
@@ -321,6 +414,57 @@ Private Sub LoadFromJSONFile(filePath As String)
         sec = JSONSection(secG, "prudential")
         .PrudentialLargeExposureRatio = ExtractJSONNumber(sec, "large_exposure_ratio", .PrudentialLargeExposureRatio)
     End With
+
+    ' GL Monitoring
+    Dim secM As String
+    secM = JSONSection(jsonContent, "gl_monitoring")
+    If secM <> "" Then
+        With mConfig.GLM
+            sec = JSONSection(secM, "thresholds")
+            .TransitZeroDays = ExtractJSONNumber(sec, "transit_zero_days", .TransitZeroDays)
+            .SuspenseRatingDays = ExtractJSONNumber(sec, "suspense_rating_days", .SuspenseRatingDays)
+            .PrepaidRegularizationDays = ExtractJSONNumber(sec, "prepaid_regularization_days", .PrepaidRegularizationDays)
+            .ExpenseVariationWarn = ExtractJSONNumber(sec, "expense_variation_warn", .ExpenseVariationWarn)
+            .ExpenseVariationCritical = ExtractJSONNumber(sec, "expense_variation_critical", .ExpenseVariationCritical)
+            .VariationMinAmount = ExtractJSONNumber(sec, "variation_min_amount", .VariationMinAmount)
+            .CashLimit = ExtractJSONNumber(sec, "cash_limit", .CashLimit)
+            .VaultLimit = ExtractJSONNumber(sec, "vault_limit", .VaultLimit)
+            .OverAgedTier1 = ExtractJSONNumber(sec, "overaged_tier1_days", .OverAgedTier1)
+            .OverAgedTier2 = ExtractJSONNumber(sec, "overaged_tier2_days", .OverAgedTier2)
+            .OverAgedTier3 = ExtractJSONNumber(sec, "overaged_tier3_days", .OverAgedTier3)
+            .DebitPositive = (ExtractJSONNumber(sec, "debit_positive", IIf(.DebitPositive, 1, 0)) <> 0)
+            sec = JSONSection(secM, "rating")
+            .RatingPointsPerTranche = ExtractJSONNumber(sec, "points_per_tranche", .RatingPointsPerTranche)
+            .RatingTrancheDays = ExtractJSONNumber(sec, "tranche_days", .RatingTrancheDays)
+            .RatingPointsProofMissing = ExtractJSONNumber(sec, "points_proof_missing", .RatingPointsProofMissing)
+            .RatingPointsSense = ExtractJSONNumber(sec, "points_sense", .RatingPointsSense)
+            .RatingPointsPrepaid = ExtractJSONNumber(sec, "points_prepaid", .RatingPointsPrepaid)
+            .RatingPointsCashLimit = ExtractJSONNumber(sec, "points_cash_limit", .RatingPointsCashLimit)
+            .RatingPointsRevenueDebit = ExtractJSONNumber(sec, "points_revenue_debit", .RatingPointsRevenueDebit)
+            .RatingPointsOverAged = ExtractJSONNumber(sec, "points_overaged", .RatingPointsOverAged)
+            .RatingPointsUniverse = ExtractJSONNumber(sec, "points_universe", .RatingPointsUniverse)
+            sec = JSONSection(secM, "nomenclature")
+            .CurrencyPrefixes = ExtractJSONString(sec, "currency_prefixes", .CurrencyPrefixes)
+            .PLPrefix = ExtractJSONString(sec, "pl_prefix", .PLPrefix)
+            .SystemPrefixes = ExtractJSONString(sec, "system_prefixes", .SystemPrefixes)
+            .InterbranchPrefix = ExtractJSONString(sec, "interbranch_prefix", .InterbranchPrefix)
+            .NonProofableClasses = ExtractJSONString(sec, "non_proofable_classes", .NonProofableClasses)
+            .PLClasses = ExtractJSONString(sec, "pl_classes", .PLClasses)
+            .AutoUserIds = ExtractJSONString(sec, "auto_user_ids", .AutoUserIds)
+            sec = JSONSection(secM, "keywords")
+            .KwTransit = ExtractJSONString(sec, "transit", .KwTransit)
+            .KwProxy = ExtractJSONString(sec, "proxy", .KwProxy)
+            .KwSuspense = ExtractJSONString(sec, "suspense", .KwSuspense)
+            .KwPrepaid = ExtractJSONString(sec, "prepaid", .KwPrepaid)
+            .KwCash = ExtractJSONString(sec, "cash", .KwCash)
+            .KwVault = ExtractJSONString(sec, "vault", .KwVault)
+            .KwDifference = ExtractJSONString(sec, "difference", .KwDifference)
+            .KwRevenue = ExtractJSONString(sec, "revenue", .KwRevenue)
+            .KwExpense = ExtractJSONString(sec, "expense", .KwExpense)
+            .KwAsset = ExtractJSONString(sec, "asset", .KwAsset)
+            .KwLiability = ExtractJSONString(sec, "liability", .KwLiability)
+        End With
+    End If
 
     ' IFRS 9
     sec = JSONSection(JSONSection(jsonContent, "ifrs9"), "provision_rates")
@@ -409,6 +553,26 @@ Private Sub LoadFromConfigSheet()
                 mConfig.RiskScoring.ThresholdHigh = CInt(paramValue)
             Case "RISK_THRESHOLD_MEDIUM"
                 mConfig.RiskScoring.ThresholdMedium = CInt(paramValue)
+
+            ' General / GL Monitoring
+            Case "ACCOUNT_NORMALIZATION"
+                mConfig.General.AccountNormalization = UCase(CStr(paramValue))
+            Case "GLM_TRANSIT_ZERO_DAYS"
+                mConfig.GLM.TransitZeroDays = CLng(paramValue)
+            Case "GLM_PREPAID_DAYS"
+                mConfig.GLM.PrepaidRegularizationDays = CLng(paramValue)
+            Case "GLM_CASH_LIMIT"
+                mConfig.GLM.CashLimit = CDbl(paramValue)
+            Case "GLM_VAULT_LIMIT"
+                mConfig.GLM.VaultLimit = CDbl(paramValue)
+            Case "GLM_VARIATION_WARN"
+                mConfig.GLM.ExpenseVariationWarn = CDbl(paramValue)
+            Case "GLM_VARIATION_CRITICAL"
+                mConfig.GLM.ExpenseVariationCritical = CDbl(paramValue)
+            Case "GLM_POINTS_PER_TRANCHE"
+                mConfig.GLM.RatingPointsPerTranche = CDbl(paramValue)
+            Case "GLM_TRANCHE_DAYS"
+                mConfig.GLM.RatingTrancheDays = CLng(paramValue)
         End Select
     Next i
 
@@ -495,6 +659,21 @@ Public Sub SaveConfigurationToSheet()
         AddConfigRow ws, rowNum, "RISK_THRESHOLD_CRITICAL", mConfig.RiskScoring.ThresholdCritical, "Seuil CRITICAL"
         AddConfigRow ws, rowNum, "RISK_THRESHOLD_HIGH", mConfig.RiskScoring.ThresholdHigh, "Seuil HIGH"
         AddConfigRow ws, rowNum, "RISK_THRESHOLD_MEDIUM", mConfig.RiskScoring.ThresholdMedium, "Seuil MEDIUM"
+
+        ' Section GL Monitoring
+        .Cells(rowNum, 1).Value = "=== GL MONITORING ==="
+        .Cells(rowNum, 1).Font.Bold = True
+        rowNum = rowNum + 1
+
+        AddConfigRow ws, rowNum, "ACCOUNT_NORMALIZATION", mConfig.General.AccountNormalization, "SOL_INJECT ou NONE (numerotation Balance -> GL)"
+        AddConfigRow ws, rowNum, "GLM_TRANSIT_ZERO_DAYS", mConfig.GLM.TransitZeroDays, "Transit/proxy/suspens: solde nul sous n jours"
+        AddConfigRow ws, rowNum, "GLM_PREPAID_DAYS", mConfig.GLM.PrepaidRegularizationDays, "Charges constatees d'avance: regularisation sous n jours"
+        AddConfigRow ws, rowNum, "GLM_CASH_LIMIT", mConfig.GLM.CashLimit, "Limite de caisse (XAF)"
+        AddConfigRow ws, rowNum, "GLM_VAULT_LIMIT", mConfig.GLM.VaultLimit, "Limite assuree du coffre (XAF, 0 = non definie)"
+        AddConfigRow ws, rowNum, "GLM_VARIATION_WARN", mConfig.GLM.ExpenseVariationWarn, "Variation charges: seuil explication"
+        AddConfigRow ws, rowNum, "GLM_VARIATION_CRITICAL", mConfig.GLM.ExpenseVariationCritical, "Variation charges: seuil investigation"
+        AddConfigRow ws, rowNum, "GLM_POINTS_PER_TRANCHE", mConfig.GLM.RatingPointsPerTranche, "Rating: points par tranche (transit/suspens)"
+        AddConfigRow ws, rowNum, "GLM_TRANCHE_DAYS", mConfig.GLM.RatingTrancheDays, "Rating: jours par tranche"
 
         ' Mise en forme
         .Columns("A:C").AutoFit
@@ -696,6 +875,11 @@ End Function
 Public Function GetIFRS9Config() As IFRS9Config
     If Not mConfigLoaded Then LoadConfiguration
     GetIFRS9Config = mConfig.IFRS9
+End Function
+
+Public Function GetGLMonitoringConfig() As GLMonitoringConfig
+    If Not mConfigLoaded Then LoadConfiguration
+    GetGLMonitoringConfig = mConfig.GLM
 End Function
 
 Public Function GetFraudKeywords() As Collection

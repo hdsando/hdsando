@@ -589,7 +589,7 @@ Public Sub NettoyerBalance()
                 End If
 
                 sfx = Mid(acct, 8)
-                acctClean = pfx & solId & subCode & sfx
+                acctClean = NormalizeBalanceAccount(acct, solId, subCode)
 
                 outRow = outRow + 1
                 outputArray(outRow, 1) = "'" & acctClean
@@ -1019,6 +1019,23 @@ ReconcilError:
     MsgBox "Erreur lors du rapprochement: " & Err.Description, vbCritical
 End Sub
 
+Public Function NormalizeBalanceAccount(rawAcct As String, solId As String, subCode As String) As String
+    ' Construit le numero de compte "GL" a partir du numero de la Balance.
+    ' Mode SOL_INJECT (defaut, extraction Finacle UBA Tchad): 3 premiers caracteres & SOL & sous-code & caracteres a partir du 8e
+    ' Mode NONE: numero inchange (si Balance et GL Proof partagent deja la meme numerotation)
+    ' A VALIDER sur les extractions reelles ("Consolidated GL Balance Report" vs GL Proof) avant chaque mission.
+    Dim cfg As Config_Manager.GeneralConfig, mode As String
+    On Error Resume Next
+    cfg = Config_Manager.GetGeneralConfig()
+    mode = UCase(Trim(cfg.AccountNormalization))
+    On Error GoTo 0
+    If mode = "NONE" Then
+        NormalizeBalanceAccount = Trim(rawAcct)
+    Else
+        NormalizeBalanceAccount = Left(rawAcct, 3) & solId & subCode & Mid(rawAcct, 8)
+    End If
+End Function
+
 Private Function NormalizeAccountKey(acct As String) As String
     ' Delegue a SAFA_Common (cle de matching unique pour Balance et GL)
     NormalizeAccountKey = SAFA_Common.NormalizeAccountKey(acct)
@@ -1198,6 +1215,13 @@ Public Sub Lancer_Traitement_Complet()
     ' Étape 4: Intelligence Artificielle
     Call UpdateProgress("Analyse IA par Compte...", 80)
     Call Advanced_AI.Lancer_IA_Par_Compte
+
+    ' Étape GL Monitoring (règles de la Knowledge Sharing Session DAI du 09/09/2026)
+    Call UpdateProgress("GL Monitoring...", 83)
+    On Error Resume Next
+    Call GL_Monitoring.Lancer_GL_Monitoring(False)
+    If Err.Number <> 0 Then Call WriteToAuditLog("ERROR", "GL Monitoring: " & Err.Description)
+    On Error GoTo TraitementError
 
     Call UpdateProgress("Gestion Historique...", 85)
     Call Advanced_AI.Gerer_Historique

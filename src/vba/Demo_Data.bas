@@ -38,6 +38,12 @@ Option Explicit
 '   ZSCORE       compte 32    : 9 ecritures ~100k + 1 de 3 000 000      (IA-001/002)
 '   BALANCE_ONLY comptes 33-37: presents en Balance, absents du GL
 '   GL_ONLY      comptes 38-42: presents au GL, absents de la Balance
+'   PREPAID      compte 43    : charge constatee d'avance non amortie depuis > 30 j (GLM-006)
+'   PROXY        compte 44    : compte proxy a solde non nul                     (GLM-004)
+'   REVENUE_DEBIT compte 45   : debit sur compte de produit                      (GLM-005)
+'   CASH_DIFF    compte 46    : ecart ATM non reconcilie > 180 j                 (GLM-009)
+'   CASH_LIMIT   compte 47    : caisse au-dela de la limite de 5 000 000         (GLM-010)
+'   SENSE        compte 48    : compte de banque (actif) a solde crediteur       (GLM-003)
 '   BENFORD      25% des soldes commencent par 8 ou 9                   (BEN-001)
 ' ==============================================================================
 
@@ -68,6 +74,12 @@ Public Function DemoAccounts(kind As String) As Variant
         Case "ZSCORE":        idx = Array(32)
         Case "BALANCE_ONLY":  idx = Array(33, 34, 35, 36, 37)
         Case "GL_ONLY":       idx = Array(38, 39, 40, 41, 42)
+        Case "PREPAID":       idx = Array(43)
+        Case "PROXY":         idx = Array(44)
+        Case "REVENUE_DEBIT": idx = Array(45)
+        Case "CASH_DIFF":     idx = Array(46)
+        Case "CASH_LIMIT":    idx = Array(47)
+        Case "SENSE":         idx = Array(48)
         Case Else:            idx = Array(0)
     End Select
 
@@ -117,9 +129,21 @@ Public Sub GenerateDemoData(Optional nbComptes As Long = 300, Optional nbEcritur
             closing(n) = 10 ^ (4 + Rnd * 4)
         End If
         closing(n) = Round(closing(n), 0)
-        If Left(PrefixFor(n), 1) = "1" Or Left(PrefixFor(n), 1) = "7" Then closing(n) = -closing(n)
+        ' Sens normal: capitaux (1), produits (7) et fournisseurs (401) au credit (negatif)
+        If Left(PrefixFor(n), 1) = "1" Or Left(PrefixFor(n), 1) = "7" Or PrefixFor(n) = "401" Then closing(n) = -closing(n)
+        ' Caisses dans la limite (5 000 000), sauf le compte 47 injecte
+        If (PrefixFor(n) = "531" Or PrefixFor(n) = "571") And n <> 47 Then
+            If Abs(closing(n)) > 4500000 Then closing(n) = 4500000 - (n Mod 100) * 1000
+        End If
         glBal(n) = closing(n)
     Next n
+
+    ' Comptes injectes pour le GL Monitoring (seance DAI 09/09/2026)
+    closing(43) = 4000000: glBal(43) = closing(43)          ' prepaid: solde attendu apres 8 mensualites
+    closing(44) = 1250000: glBal(44) = closing(44)          ' proxy non nul
+    closing(46) = 950000: glBal(46) = closing(46)           ' ecart ATM non regularise
+    closing(47) = 8500000: glBal(47) = closing(47)          ' caisse au-dela de la limite
+    closing(48) = -Abs(closing(48)): glBal(48) = closing(48) ' compte de banque (actif) crediteur
 
     ' Ecarts injectes (comptes 1..15)
     glBal(1) = closing(1) + 12000000
@@ -292,15 +316,47 @@ Private Function WriteTransactions(ByRef arr() As Variant, ByRef r As Long, n As
             Next i
             total = total + AddTx(arr, r, 2, "VIREMENT RECU EXCEPTIONNEL", 3000000, txTotal)
 
+        Case 43
+            ' PREPAID: amortissements mensuels arretes il y a plus de 30 jours
+            For i = 1 To 3
+                total = total + AddTx(arr, r, 45 + i * 25, "AMORTISSEMENT MENSUEL LOYER", -1000000, txTotal)
+            Next i
+
+        Case 44
+            ' PROXY: transaction echouee non re-imputee
+            total = total + AddTx(arr, r, 3, "PROXY ECHEC SYSTEME LOT 17", 1250000, txTotal)
+
+        Case 45
+            ' PRODUIT: un debit (extourne) parmi des credits
+            total = total + AddTx(arr, r, 4, "EXTOURNE COMMISSION CLIENT", -150000, txTotal)
+            total = total + NormalActivity(arr, r, 6, txTotal, 1)
+
+        Case 46
+            ' ECART ATM: items anciens non reconcilies
+            For i = 1 To 4
+                total = total + AddTx(arr, r, 100 + i * 75, "ECART ATM GAB 0" & i & " NON RECONCILIE", RandAmount(50000, 400000), txTotal)
+            Next i
+
+        Case 47, 48
+            total = total + NormalActivity(arr, r, 5, txTotal)
+
         Case Else
             cnt = 3 + Int(avgTx * (0.5 + Rnd))
-            total = total + NormalActivity(arr, r, cnt, txTotal)
+            ' Comptes de produits: credits seulement; comptes de charges: debits seulement
+            If PrefixFor(n) = "701" Then
+                total = total + NormalActivity(arr, r, cnt, txTotal, 1)
+            ElseIf PrefixFor(n) = "601" Then
+                total = total + NormalActivity(arr, r, cnt, txTotal, -1)
+            Else
+                total = total + NormalActivity(arr, r, cnt, txTotal)
+            End If
     End Select
 
     WriteTransactions = total
 End Function
 
-Private Function NormalActivity(ByRef arr() As Variant, ByRef r As Long, cnt As Long, ByRef txTotal As Long) As Double
+Private Function NormalActivity(ByRef arr() As Variant, ByRef r As Long, cnt As Long, ByRef txTotal As Long, Optional signMode As Long = 0) As Double
+    ' signMode: 0 = aleatoire, 1 = credits uniquement (positif), -1 = debits uniquement (negatif)
     Dim i As Long, total As Double, amt As Double
     For i = 1 To cnt
         amt = RandAmount(10000, 4000000)
@@ -309,7 +365,11 @@ Private Function NormalActivity(ByRef arr() As Variant, ByRef r As Long, cnt As 
         If amt >= 450000 And amt < 500000 Then amt = 420000
         If amt >= 900000 And amt < 1000000 Then amt = 850000
         If amt >= 4500000 Then amt = 4200000
-        If Rnd < 0.5 Then amt = -amt
+        If signMode = 0 Then
+            If Rnd < 0.5 Then amt = -amt
+        ElseIf signMode < 0 Then
+            amt = -amt
+        End If
         total = total + AddTx(arr, r, 1 + Int(Rnd * 60), RandNarration(), amt, txTotal)
     Next i
     NormalActivity = total
@@ -398,7 +458,13 @@ Private Function PrefixFor(n As Long) As String
         Case 31, 32: PrefixFor = "521"
         Case 33 To 37: PrefixFor = "411"
         Case 38 To 42: PrefixFor = "401"
-        Case Else: PrefixFor = Choose(((n - 43) Mod 11) + 1, "101", "211", "311", "401", "411", "521", "571", "601", "701", "512", "531")
+        Case 43: PrefixFor = "476"   ' charges constatees d'avance
+        Case 44: PrefixFor = "472"   ' proxy
+        Case 45: PrefixFor = "701"   ' produit avec debit
+        Case 46: PrefixFor = "571"   ' ecart caisse / ATM
+        Case 47: PrefixFor = "571"   ' caisse au-dela de la limite
+        Case 48: PrefixFor = "521"   ' banque a solde crediteur (sens anormal)
+        Case Else: PrefixFor = Choose(((n - 49) Mod 11) + 1, "101", "211", "311", "401", "411", "521", "571", "601", "701", "512", "531")
     End Select
 End Function
 
@@ -412,6 +478,14 @@ End Function
 
 Private Function NameFor(n As Long) As String
     Dim base As String
+    Select Case n
+        Case 43: NameFor = "CHARGES CONSTATEES D AVANCE LOYER SIEGE": Exit Function
+        Case 44: NameFor = "PROXY GAB TRANSACTIONS ECHOUEES": Exit Function
+        Case 45: NameFor = "PRODUITS COMMISSIONS TRANSFERTS": Exit Function
+        Case 46: NameFor = "ECART CAISSE ATM AGENCE": Exit Function
+        Case 47: NameFor = "CAISSE PRINCIPALE AGENCE": Exit Function
+        Case 48: NameFor = "BANQUE BEAC COMPTE COURANT": Exit Function
+    End Select
     Select Case PrefixFor(n)
         Case "101": base = "CAPITAL SOCIAL"
         Case "211": base = "IMMOBILISATIONS INCORPORELLES"

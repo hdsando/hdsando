@@ -86,6 +86,20 @@ Public Function RunSmokeTest() As Boolean
     Call AssertSheetHasRows("COMPLIANCE_CHECK contient des regles", "COMPLIANCE_CHECK", 3)
     Call AssertComplianceStatus("Suspens > 90 jours (COBAC-001) NON-CONFORME", "COBAC-001", "NON-CONFORME")
 
+    ' ---- 5b. GL Monitoring (regles de la seance DAI du 09/09/2026) ----
+    Call RunStep("GL Monitoring", "GL_Monitoring.Lancer_GL_Monitoring_Silencieux")
+    Call AssertSheetHasRows("GL_MONITORING contient des constats", "GL_MONITORING", 5)
+    Call AssertSheetExists("PROOFABLE_UNIVERSE cree", "PROOFABLE_UNIVERSE")
+    Call AssertSheetExists("GL_RATING cree", "GL_RATING")
+    Call AssertGLM("GLM-002 proof manquant (comptes Balance seule)", "GLM-002", Demo_Data.DemoAccounts("BALANCE_ONLY"))
+    Call AssertGLM("GLM-003 sens anormal (banque a solde crediteur)", "GLM-003", Demo_Data.DemoAccounts("SENSE"))
+    Call AssertGLM("GLM-004 proxy a solde non nul", "GLM-004", Demo_Data.DemoAccounts("PROXY"))
+    Call AssertGLM("GLM-004 suspens a solde non nul", "GLM-004", Demo_Data.DemoAccounts("SUSPENS"))
+    Call AssertGLM("GLM-005 debit sur compte de produit", "GLM-005", Demo_Data.DemoAccounts("REVENUE_DEBIT"))
+    Call AssertGLM("GLM-006 charge constatee d'avance non amortie", "GLM-006", Demo_Data.DemoAccounts("PREPAID"))
+    Call AssertGLM("GLM-009 ecart ATM over-aged", "GLM-009", Demo_Data.DemoAccounts("CASH_DIFF"))
+    Call AssertGLM("GLM-010 caisse au-dela de la limite", "GLM-010", Demo_Data.DemoAccounts("CASH_LIMIT"))
+
     ' ---- 6. Rapports ----
     Call RunStepWb("Generation rapports (Report_Generator)", "Report_Generator.GenerateFullReport")
     Call AssertSheetHasRows("EXECUTIVE_SUMMARY genere", "EXECUTIVE_SUMMARY", 5)
@@ -284,6 +298,25 @@ Private Sub AssertAlertForAccounts(name As String, accounts As Variant)
         If hit Then Exit For
     Next i
     Call Record(name, "Alerte sur compte injecte", IIf(hit, "Alerte trouvee (ligne " & i & ")", "AUCUNE alerte"), hit)
+End Sub
+
+Private Sub AssertGLM(name As String, rule As String, accounts As Variant)
+    ' Verifie qu'un constat GL_MONITORING existe pour la regle ET l'un des comptes
+    Dim ws As Worksheet, lastRow As Long, i As Long, k As Long, hit As Boolean
+    If Not SAFA_Common.FeuilleExiste("GL_MONITORING") Then
+        Call Record(name, "Constat " & rule, "GL_MONITORING absent", False): Exit Sub
+    End If
+    Set ws = ThisWorkbook.Sheets("GL_MONITORING")
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    For i = 2 To lastRow
+        If UCase(SAFA_Common.SafeText(ws.Cells(i, 1).Value)) = UCase(rule) Then
+            For k = LBound(accounts) To UBound(accounts)
+                If NormKey(ws.Cells(i, 2).Value) = NormKey(accounts(k)) Then hit = True: Exit For
+            Next k
+        End If
+        If hit Then Exit For
+    Next i
+    Call Record(name, "Constat " & rule & " sur compte injecte", IIf(hit, "Trouve (ligne " & i & ")", "AUCUN"), hit)
 End Sub
 
 Private Sub AssertAlertRef(name As String, refPrefix As String)

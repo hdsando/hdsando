@@ -43,6 +43,10 @@ Un mode console (menus texte) reste disponible : `SAFA_Console.Demarrer`.
 
 Les positions de colonnes de `RECONCIL`, `AUDIT_REPORT` et `COMPLIANCE_CHECK` sont définies **une seule fois** dans `SAFA_Common` (`RECONCIL_COL_*`, `AUDIT_COL_*`, `COMPLIANCE_COL_*`).
 
+## GL Monitoring (règles de la séance DAI du 09/09/2026)
+
+Le bouton **GL Monitoring** (exécuté aussi dans l'analyse complète) applique les règles de revue du grand livre et de justification des comptes : univers proofable et exhaustivité de la liste CI (`PROOFABLE_LIST`), proofs manquants, sens des soldes, transit / proxy / suspens non nuls, débits sur comptes de produits, charges constatées d'avance, variations des charges (`BALANCE_PREV_RAW`), items over-aged, limites de caisse et de coffre, INTERSOL, saisies manuelles sur comptes automatisés. Résultats : `GL_MONITORING`, `PROOFABLE_UNIVERSE`, `GL_RATING` (note mensuelle reconstituée). Le bouton **Qualité proofs** analyse un dossier de justificatifs Excel (`PROOF_QUALITY` : lignes masquées, totaux saisis, copier-coller du relevé, paires annulantes, écart proof/GL). Détails et points à valider sur les extractions réelles : [`docs/GL_MONITORING_ALIGNMENT.md`](docs/GL_MONITORING_ALIGNMENT.md).
+
 ## Détecteurs
 
 | Réf. | Détection | Seuil (config) |

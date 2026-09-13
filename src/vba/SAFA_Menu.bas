@@ -58,7 +58,7 @@ Public Sub BuildMenu()
     ActiveWindow.Zoom = 100
     ws.Columns("A").ColumnWidth = 2
     ws.Columns("B:K").ColumnWidth = 13
-    ws.Rows("1:30").RowHeight = 18
+    ws.Rows("1:32").RowHeight = 18
     ws.Cells.Interior.Color = RGB(247, 248, 250)
     ws.Cells.Font.Name = "Calibri"
 
@@ -84,7 +84,7 @@ Public Sub BuildMenu()
     Call SectionLabel(ws, "B12", "3. ANALYSE")
     Call SectionLabel(ws, "B17", "4. RAPPORTS")
     Call SectionLabel(ws, "B22", "5. ANALYSES AVANCEES")
-    Call SectionLabel(ws, "B26", "6. SYSTEME")
+    Call SectionLabel(ws, "B28", "6. SYSTEME")
 
     ' Panneau de statut (libelles)
     ws.Range("H5").Value = "Balance:"
@@ -125,15 +125,19 @@ Public Sub BuildMenu()
     Call AddButton(ws, "btnNet", "Reseau", "D23", 2, CLR_TEAL, "SAFA_Console.LancerReseau")
     Call AddButton(ws, "btnDiag", "Diagnostic", "F23", 2, CLR_TEAL, "SAFA_Console.LancerDiagnostic")
     Call AddButton(ws, "btnTests", "Tests auto", "H23", 2, CLR_TEAL, "SAFA_Console.LancerTests")
+    Call AddButton(ws, "btnGLM", "GL Monitoring", "B25", 2, CLR_ORANGE, "SAFA_Console.LancerGLMonitoring")
+    Call AddButton(ws, "btnProofs", "Qualite proofs", "D25", 2, CLR_ORANGE, "SAFA_Console.LancerQualiteProofs")
+    Call AddButton(ws, "btnPrev", "Balance N-1", "F25", 2, CLR_BLUE, "SAFA_Console.ImporterBalancePrecedente")
+    Call AddButton(ws, "btnCI", "Liste proofables", "H25", 2, CLR_BLUE, "SAFA_Console.ImporterListeProofables")
 
     ' --- 6. SYSTEME ---
-    Call AddButton(ws, "btnReset", "Reinitialiser", "B27", 2, CLR_RED, "SAFA_Console.Reinitialiser")
-    Call AddButton(ws, "btnTrail", "Journal d'audit", "D27", 2, CLR_GREY, "SAFA_Console.OuvrirJournalAudit")
-    Call AddButton(ws, "btnHelp", "Aide", "F27", 2, CLR_GREY, "SAFA_Console.AfficherAide")
-    Call AddButton(ws, "btnConsole", "Mode console", "H27", 2, CLR_GREY, "SAFA_Console.Demarrer")
+    Call AddButton(ws, "btnReset", "Reinitialiser", "B29", 2, CLR_RED, "SAFA_Console.Reinitialiser")
+    Call AddButton(ws, "btnTrail", "Journal d'audit", "D29", 2, CLR_GREY, "SAFA_Console.OuvrirJournalAudit")
+    Call AddButton(ws, "btnHelp", "Aide", "F29", 2, CLR_GREY, "SAFA_Console.AfficherAide")
+    Call AddButton(ws, "btnConsole", "Mode console", "H29", 2, CLR_GREY, "SAFA_Console.Demarrer")
 
-    ws.Range("B30").Value = "Astuce: le bouton Tests auto charge des donnees demo, execute tout le pipeline et verifie chaque detecteur."
-    ws.Range("B30").Font.Size = 9: ws.Range("B30").Font.Color = RGB(120, 120, 120)
+    ws.Range("B32").Value = "Astuce: le bouton Tests auto charge des donnees demo, execute tout le pipeline et verifie chaque detecteur. GL Monitoring: regles de la seance DAI du 09/09/2026."
+    ws.Range("B32").Font.Size = 9: ws.Range("B32").Font.Color = RGB(120, 120, 120)
 
     ws.Range("A1").Select
     Call RefreshStatus
