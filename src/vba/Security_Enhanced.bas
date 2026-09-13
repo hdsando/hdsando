@@ -7,16 +7,19 @@ Option Explicit
 ' ==============================================================================
 ' Description: Module de sécurité renforcée
 ' Corrections implémentées:
-'   - SEC-001: Hash PBKDF2-like avec itérations
-'   - SEC-002: Salt unique par utilisateur
+'   - SEC-001: Hash de mot de passe PBKDF2-HMAC-SHA256 reel (Crypto_Provider / .NET)
+'   - SEC-002: Salt unique par utilisateur (RNG cryptographique)
 '   - SEC-003: Force changement mot de passe au premier login
 '   - SEC-004: Persistance du compteur de tentatives
 '   - SEC-005: Session ID avec composant cryptographique
-'   - SEC-010/011: Chiffrement AES simulé (plus robuste que XOR)
+'   - SEC-010/011: Chiffrement AES-256-CBC reel (Crypto_Provider)
+' Format des hash stockes: "pbkdf2$<iterations>$<salt>$<hex>" (ou "legacy$..." sans .NET)
+' Les hash produits par les versions anterieures ne sont plus verifiables:
+' recreer la feuille USERS (CreateExtendedUsersSheet) ou EnsureDefaultAdmin.
 ' ==============================================================================
 
 ' --- CONSTANTES SÉCURITÉ ---
-Private Const HASH_ITERATIONS As Long = 10000
+Private Const HASH_ITERATIONS As Long = 10000   ' iterations du repli legacy (sans .NET)
 Private Const SALT_LENGTH As Integer = 16
 Private Const MIN_PASSWORD_LENGTH As Integer = 8
 Private Const PASSWORD_EXPIRY_DAYS As Integer = 90
@@ -31,59 +34,53 @@ Private Const LOCKOUT_DURATION_MINUTES As Integer = 30
 ' ==============================================================================
 
 Public Function GenerateSecureSalt() As String
-    ' Génère un salt aléatoire de 16 caractères hexadécimaux
-    Dim i As Integer
-    Dim salt As String
-    Dim charSet As String
-
-    ' S'assurer que le générateur est initialisé
-    Static initialized As Boolean
-    If Not initialized Then
-        Randomize Timer + CDbl(Now) * 86400
-        initialized = True
-    End If
-
-    charSet = "0123456789ABCDEF"
-    salt = ""
-
-    For i = 1 To SALT_LENGTH
-        salt = salt & Mid(charSet, Int(Rnd * 16) + 1, 1)
-    Next i
-
-    GenerateSecureSalt = salt
+    ' Salt aleatoire (RNG cryptographique .NET si disponible): SALT_LENGTH octets en hexadecimal
+    GenerateSecureSalt = Crypto_Provider.GenerateSaltHex(SALT_LENGTH)
 End Function
 
 Public Function HashPasswordSecure(password As String, salt As String) As String
-    ' Hash PBKDF2-like avec itérations multiples
-    ' Plus résistant aux attaques par force brute que DJB2 simple
-    Dim hash As String
-    Dim i As Long
-    Dim intermediate As String
-
-    ' Validation des entrées
+    ' Hash de mot de passe auto-descriptif:
+    '   pbkdf2$<iterations>$<salt>$<hex>   (PBKDF2-HMAC-SHA256 reel)
+    '   legacy$<iterations>$<salt>$<hex>   (repli sans .NET, non cryptographique)
     If Len(password) = 0 Or Len(salt) = 0 Then
         HashPasswordSecure = ""
         Exit Function
     End If
 
-    ' Première passe
-    intermediate = password & salt
-
-    ' Itérations pour renforcer le hash
-    For i = 1 To HASH_ITERATIONS
-        intermediate = SAFA_Common.ComputeHash(intermediate & salt & CStr(i))
-    Next i
-
-    ' Hash final
-    HashPasswordSecure = SAFA_Common.ComputeHash(intermediate & "SAFA_FINAL")
+    If Crypto_Provider.IsAvailable() Then
+        HashPasswordSecure = "pbkdf2$" & Crypto_Provider.PBKDF2_ITERATIONS & "$" & salt & "$" & _
+                             Crypto_Provider.Pbkdf2Sha256Hex(password, salt, Crypto_Provider.PBKDF2_ITERATIONS, 32)
+    Else
+        HashPasswordSecure = "legacy$" & HASH_ITERATIONS & "$" & salt & "$" & _
+                             Crypto_Provider.Pbkdf2Sha256Hex(password, salt, HASH_ITERATIONS, 32)
+    End If
 End Function
 
 Public Function VerifyPassword(password As String, storedHash As String, salt As String) As Boolean
-    ' Vérifie si le mot de passe correspond au hash stocké
-    Dim computedHash As String
+    ' Verifie un mot de passe quel que soit le format stocke (pbkdf2$ / legacy$ / ancien hex brut)
+    Dim parts() As String
+    Dim iters As Long, storedSalt As String, digest As String
 
-    computedHash = HashPasswordSecure(password, salt)
-    VerifyPassword = (computedHash = storedHash)
+    VerifyPassword = False
+    If Len(password) = 0 Or Len(storedHash) = 0 Then Exit Function
+
+    If Left(storedHash, 7) = "pbkdf2$" Or Left(storedHash, 7) = "legacy$" Then
+        parts = Split(storedHash, "$")
+        If UBound(parts) < 3 Then Exit Function
+        iters = SAFA_Common.SafeLong(parts(1))
+        storedSalt = parts(2)
+        digest = parts(3)
+        If Left(storedHash, 7) = "pbkdf2$" And Not Crypto_Provider.IsAvailable() Then Exit Function
+        VerifyPassword = (Crypto_Provider.Pbkdf2Sha256Hex(password, storedSalt, iters, 32) = digest)
+    Else
+        ' Ancien format (hex brut, algorithme des versions anterieures): non verifiable de facon sure
+        VerifyPassword = False
+    End If
+End Function
+
+Public Function IsHashUpToDate(storedHash As String) As Boolean
+    ' True si le hash est deja au format PBKDF2 reel
+    IsHashUpToDate = (Left(storedHash, 7) = "pbkdf2$")
 End Function
 
 ' ==============================================================================
@@ -330,146 +327,27 @@ End Function
 ' ==============================================================================
 
 Public Function EncryptAESLike(plainText As String, key As String) As String
-    ' Chiffrement par blocs avec substitution et permutation
-    ' Plus robuste que XOR simple (bien que pas un vrai AES)
-    Dim i As Long, j As Long
-    Dim blockSize As Integer
-    Dim keyExpanded As String
-    Dim result As String
-    Dim block As String
-    Dim encryptedBlock As String
-
+    ' AES-256-CBC reel via Crypto_Provider (nom conserve pour compatibilite des appelants).
+    ' Sortie prefixee "aes$" (ou "legacy$" si .NET indisponible).
     If Len(plainText) = 0 Or Len(key) = 0 Then
         EncryptAESLike = ""
         Exit Function
     End If
-
-    blockSize = 16
-
-    ' Expansion de clé
-    keyExpanded = ExpandKey(key, Len(plainText) + blockSize)
-
-    ' Padding PKCS7
-    Dim padLength As Integer
-    padLength = blockSize - (Len(plainText) Mod blockSize)
-    plainText = plainText & String(padLength, Chr(padLength))
-
-    result = ""
-
-    ' Chiffrement par blocs
-    For i = 1 To Len(plainText) Step blockSize
-        block = Mid(plainText, i, blockSize)
-        encryptedBlock = ""
-
-        For j = 1 To Len(block)
-            Dim charCode As Integer
-            Dim keyChar As Integer
-            Dim encrypted As Integer
-
-            charCode = Asc(Mid(block, j, 1))
-            keyChar = Asc(Mid(keyExpanded, i + j - 1, 1))
-
-            ' Substitution + XOR + rotation
-            encrypted = ((charCode Xor keyChar) + j) Mod 256
-            encrypted = ((encrypted * 7) + 13) Mod 256
-
-            encryptedBlock = encryptedBlock & Right("00" & Hex(encrypted), 2)
-        Next j
-
-        result = result & encryptedBlock
-    Next i
-
-    ' Ajouter IV (vecteur d'initialisation) au début
-    Dim iv As String
-    iv = Left(SAFA_Common.ComputeHash(CStr(Now) & CStr(Timer)), 16)
-
-    EncryptAESLike = iv & result
+    EncryptAESLike = Crypto_Provider.AesEncrypt(plainText, key)
 End Function
 
 Public Function DecryptAESLike(encryptedText As String, key As String) As String
-    ' Déchiffrement correspondant
-    Dim i As Long, j As Long
-    Dim blockSize As Integer
-    Dim keyExpanded As String
-    Dim result As String
-    Dim iv As String
-    Dim cipherText As String
-
-    If Len(encryptedText) < 16 Then
+    ' Dechiffrement: route selon le prefixe ("aes$", "legacy$" ou ancien schema sans prefixe)
+    If Len(encryptedText) = 0 Or Len(key) = 0 Then
         DecryptAESLike = ""
         Exit Function
     End If
-
-    blockSize = 16
-
-    ' Extraire IV
-    iv = Left(encryptedText, 16)
-    cipherText = Mid(encryptedText, 17)
-
-    ' Expansion de clé
-    keyExpanded = ExpandKey(key, Len(cipherText) / 2 + blockSize)
-
-    result = ""
-
-    ' Déchiffrement par blocs (2 caractères hex = 1 byte)
-    Dim byteIndex As Long
-    byteIndex = 1
-
-    For i = 1 To Len(cipherText) Step (blockSize * 2)
-        For j = 0 To blockSize - 1
-            If i + j * 2 <= Len(cipherText) Then
-                Dim hexByte As String
-                Dim encrypted As Integer
-                Dim keyChar As Integer
-                Dim decrypted As Integer
-
-                hexByte = Mid(cipherText, i + j * 2, 2)
-                encrypted = CLng("&H" & hexByte)
-
-                ' Rotation inverse
-                decrypted = ((encrypted - 13) * 183) Mod 256  ' 183 est l'inverse de 7 mod 256
-                If decrypted < 0 Then decrypted = decrypted + 256
-
-                ' Soustraction position
-                decrypted = (decrypted - (j + 1)) Mod 256
-                If decrypted < 0 Then decrypted = decrypted + 256
-
-                ' XOR avec clé
-                keyChar = Asc(Mid(keyExpanded, byteIndex, 1))
-                decrypted = decrypted Xor keyChar
-
-                result = result & Chr(decrypted)
-                byteIndex = byteIndex + 1
-            End If
-        Next j
-    Next i
-
-    ' Retirer padding PKCS7
-    If Len(result) > 0 Then
-        Dim lastChar As Integer
-        lastChar = Asc(Right(result, 1))
-        If lastChar > 0 And lastChar <= blockSize Then
-            result = Left(result, Len(result) - lastChar)
-        End If
-    End If
-
-    DecryptAESLike = result
+    DecryptAESLike = Crypto_Provider.AesDecrypt(encryptedText, key)
 End Function
 
-Private Function ExpandKey(key As String, length As Long) As String
-    ' Expansion de clé par hachage itératif
-    Dim result As String
-    Dim iteration As Long
-
-    result = key
-    iteration = 0
-
-    Do While Len(result) < length
-        iteration = iteration + 1
-        result = result & SAFA_Common.ComputeHash(key & CStr(iteration))
-    Loop
-
-    ExpandKey = Left(result, length)
+Public Function IsRealCryptoAvailable() As Boolean
+    ' Permet a l'interface d'avertir si la crypto reelle (.NET) est absente
+    IsRealCryptoAvailable = Crypto_Provider.IsAvailable()
 End Function
 
 ' ==============================================================================
@@ -522,21 +400,22 @@ Public Function AuthenticateSecure(username As String, password As String) As In
             storedHash = SAFA_Common.SafeText(wsUsers.Cells(i, 2).Value)
             salt = SAFA_Common.SafeText(wsUsers.Cells(i, 7).Value)
 
-            ' Si pas de salt, utiliser l'ancien système (rétrocompatibilité)
-            If salt = "" Then
-                salt = "SAFA_SALT_2024"
-                inputHash = SAFA_Common.ComputeHash(password & salt)
-            Else
-                inputHash = HashPasswordSecure(password, salt)
-            End If
-
-            ' Vérifier mot de passe
-            If storedHash = inputHash Then
+            ' Vérifier mot de passe (tous formats: pbkdf2$ / legacy$)
+            If VerifyPassword(password, storedHash, salt) Then
                 ' Réinitialiser compteur
                 Call ResetFailedAttempts(username)
 
                 ' Mettre à jour dernière connexion
                 wsUsers.Cells(i, 5).Value = Now
+
+                ' Mise a niveau transparente vers PBKDF2 reel si le hash stocke est en format legacy
+                If Not IsHashUpToDate(storedHash) And Crypto_Provider.IsAvailable() Then
+                    Dim upSalt As String
+                    upSalt = GenerateSecureSalt()
+                    wsUsers.Cells(i, 2).Value = HashPasswordSecure(password, upSalt)
+                    wsUsers.Cells(i, 7).Value = upSalt
+                    SAFA_Common.WriteAuditLog "SECURITY", "Hash mot de passe mis a niveau (PBKDF2)", "", username
+                End If
 
                 SAFA_Common.WriteAuditLog "LOGIN_SUCCESS", "Connexion réussie", "", username
 
@@ -608,19 +487,11 @@ Public Function ChangePasswordSecure(username As String, oldPassword As String, 
 
     For i = 2 To lr
         If UCase(wsUsers.Cells(i, 1).Value) = UCase(username) Then
-            ' Vérifier ancien mot de passe
+            ' Vérifier ancien mot de passe (tous formats)
             storedHash = SAFA_Common.SafeText(wsUsers.Cells(i, 2).Value)
             salt = SAFA_Common.SafeText(wsUsers.Cells(i, 7).Value)
 
-            Dim oldHash As String
-            If salt = "" Then
-                salt = "SAFA_SALT_2024"
-                oldHash = SAFA_Common.ComputeHash(oldPassword & salt)
-            Else
-                oldHash = HashPasswordSecure(oldPassword, salt)
-            End If
-
-            If oldHash <> storedHash Then
+            If Not VerifyPassword(oldPassword, storedHash, salt) Then
                 ChangePasswordSecure = "Ancien mot de passe incorrect"
                 Exit Function
             End If
@@ -695,6 +566,67 @@ Public Sub CreateExtendedUsersSheet()
     SAFA_Common.WriteAuditLog "SYSTEM", "Feuille USERS créée avec sécurité renforcée", ""
 End Sub
 
+Public Sub EnsureDefaultAdmin()
+    ' Garantit l'existence d'un compte admin avec un hash valide (PBKDF2 reel si .NET)
+    ' Mot de passe initial: Admin@2024! - changement obligatoire a la premiere connexion
+    Dim ws As Worksheet
+    Dim lr As Long, i As Long, found As Boolean
+
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets("USERS")
+    On Error GoTo 0
+
+    If ws Is Nothing Then
+        Call CreateExtendedUsersSheet
+        Exit Sub
+    End If
+
+    ' Feuille presente mais layout ancien -> migrer les colonnes
+    If SAFA_Common.SafeText(ws.Cells(1, 7).Value) <> "Salt" Then Call MigrateUsersToEnhancedSecurity
+
+    lr = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    For i = 2 To lr
+        If UCase(SAFA_Common.SafeText(ws.Cells(i, 1).Value)) = "ADMIN" Then
+            found = True
+            ' Hash absent ou dans un format non verifiable -> reinitialiser
+            Dim h As String
+            h = SAFA_Common.SafeText(ws.Cells(i, 2).Value)
+            If h = "" Or (Left(h, 7) <> "pbkdf2$" And Left(h, 7) <> "legacy$") Then
+                Dim s As String
+                s = GenerateSecureSalt()
+                ws.Cells(i, 2).Value = HashPasswordSecure("Admin@2024!", s)
+                ws.Cells(i, 7).Value = s
+                ws.Cells(i, 6).Value = True
+                ws.Cells(i, 8).Value = 0
+                ws.Cells(i, 9).Value = ""
+                ws.Cells(i, 10).Value = True
+                ws.Cells(i, 11).Value = Now
+                SAFA_Common.WriteAuditLog "SECURITY", "Compte admin reinitialise (format de hash invalide)", ""
+            End If
+            Exit For
+        End If
+    Next i
+
+    If Not found Then
+        Dim r As Long, adminSalt As String
+        r = lr + 1
+        adminSalt = GenerateSecureSalt()
+        ws.Cells(r, 1).Value = "admin"
+        ws.Cells(r, 2).Value = HashPasswordSecure("Admin@2024!", adminSalt)
+        ws.Cells(r, 3).Value = "ADMIN"
+        ws.Cells(r, 4).Value = "Administrateur Systeme"
+        ws.Cells(r, 5).Value = Now
+        ws.Cells(r, 6).Value = True
+        ws.Cells(r, 7).Value = adminSalt
+        ws.Cells(r, 8).Value = 0
+        ws.Cells(r, 9).Value = ""
+        ws.Cells(r, 10).Value = True
+        ws.Cells(r, 11).Value = Now
+        ws.Cells(r, 12).Value = ""
+        SAFA_Common.WriteAuditLog "SECURITY", "Compte admin cree", ""
+    End If
+End Sub
+
 ' ==============================================================================
 ' 9. MIGRATION DES UTILISATEURS EXISTANTS
 ' ==============================================================================
@@ -729,9 +661,10 @@ Public Sub MigrateUsersToEnhancedSecurity()
     For i = 2 To lr
         currentSalt = SAFA_Common.SafeText(wsUsers.Cells(i, 7).Value)
 
-        If currentSalt = "" Then
-            ' Utilisateur ancien système - marquer pour changement de mot de passe
-            wsUsers.Cells(i, 7).Value = "LEGACY"  ' Marqueur spécial
+        If currentSalt = "" Or currentSalt = "LEGACY" Then
+            ' Utilisateur ancien systeme: son hash n'est plus verifiable -> l'admin doit
+            ' redefinir le mot de passe (AdminResetPassword). On marque le compte.
+            wsUsers.Cells(i, 7).Value = "LEGACY"
             wsUsers.Cells(i, 8).Value = 0
             wsUsers.Cells(i, 10).Value = True     ' Forcer changement
         End If
@@ -740,10 +673,40 @@ Public Sub MigrateUsersToEnhancedSecurity()
     wsUsers.Columns("A:L").AutoFit
 
     SAFA_Common.WriteAuditLog "SYSTEM", "Migration sécurité utilisateurs effectuée", ""
-    MsgBox "Migration de sécurité terminée." & vbCrLf & _
-           "Les utilisateurs existants devront changer leur mot de passe.", _
-           vbInformation, "Migration Sécurité"
 End Sub
+
+Public Function AdminResetPassword(username As String, newPassword As String) As String
+    ' Reinitialisation par un administrateur (sans ancien mot de passe). Retourne "" si OK.
+    Dim wsUsers As Worksheet, i As Long, lr As Long, validation As String, s As String
+
+    validation = ValidatePasswordStrength(newPassword)
+    If validation <> "" Then
+        AdminResetPassword = "Mot de passe trop faible:" & vbCrLf & validation
+        Exit Function
+    End If
+
+    On Error Resume Next
+    Set wsUsers = ThisWorkbook.Sheets("USERS")
+    On Error GoTo 0
+    If wsUsers Is Nothing Then AdminResetPassword = "Feuille USERS introuvable": Exit Function
+
+    lr = wsUsers.Cells(wsUsers.Rows.Count, 1).End(xlUp).Row
+    For i = 2 To lr
+        If UCase(SAFA_Common.SafeText(wsUsers.Cells(i, 1).Value)) = UCase(username) Then
+            s = GenerateSecureSalt()
+            wsUsers.Cells(i, 2).Value = HashPasswordSecure(newPassword, s)
+            wsUsers.Cells(i, 7).Value = s
+            wsUsers.Cells(i, 8).Value = 0
+            wsUsers.Cells(i, 9).Value = ""
+            wsUsers.Cells(i, 10).Value = True
+            wsUsers.Cells(i, 11).Value = Now
+            SAFA_Common.WriteAuditLog "SECURITY", "Mot de passe reinitialise par admin", "", username
+            AdminResetPassword = ""
+            Exit Function
+        End If
+    Next i
+    AdminResetPassword = "Utilisateur non trouve"
+End Function
 
 ' ==============================================================================
 ' 10. VALIDATION DES ENTRÉES

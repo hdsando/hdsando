@@ -43,30 +43,24 @@ Private Sub Workbook_Open()
     ' S'assurer que les feuilles essentielles existent
     Call EnsureRequiredSheets
 
+    ' Charger la configuration (settings.json ou CONFIG_DATA, sinon defauts)
+    Call Config_Manager.LoadConfiguration
+
     ' ═══════════════════════════════════════════════════════════════
-    ' 2. MODE APPLICATION (BLACKOUT)
+    ' 2. FEUILLE MENU (cockpit a boutons, sans UserForm)
     ' ═══════════════════════════════════════════════════════════════
 
-    ' Afficher et activer MENU
+    If Not SheetExists("MENU") Then Call SAFA_Menu.BuildMenu
     ThisWorkbook.Sheets("MENU").Visible = xlSheetVisible
     ThisWorkbook.Sheets("MENU").Activate
+    Call SAFA_Menu.RefreshStatus
 
-    ' Cacher toutes les autres feuilles
-    For Each ws In ThisWorkbook.Worksheets
-        If ws.Name <> "MENU" Then
-            ' VeryHidden = invisible même via le menu Excel
-            ws.Visible = xlSheetVeryHidden
-        End If
-    Next ws
+    ' Masquer uniquement les feuilles techniques (les resultats restent visibles)
+    Call Masquer_Feuilles_Techniques_Silencieux
 
     Application.ScreenUpdating = True
 
-    ' ═══════════════════════════════════════════════════════════════
-    ' 3. LANCEMENT DIFFÉRÉ DU COCKPIT
-    ' ═══════════════════════════════════════════════════════════════
-
-    ' OnTime évite les crashs au démarrage (bug Excel connu)
-    Application.OnTime Now + TimeValue(STARTUP_DELAY), "Lancer_Demarrage_Differe"
+    Call Core_Engine.WriteToAuditLog("SESSION", "S.A.F.A ouvert")
 
     On Error GoTo 0
 End Sub
@@ -85,9 +79,6 @@ Private Sub Workbook_BeforeClose(Cancel As Boolean)
 
     ' Réinitialiser la StatusBar
     Application.StatusBar = False
-
-    ' Annuler les OnTime en cours
-    Application.OnTime Now + TimeValue(STARTUP_DELAY), "Lancer_Demarrage_Differe", , False
 
     On Error GoTo 0
 End Sub
@@ -137,7 +128,7 @@ Private Sub EnsureRequiredSheets()
     Dim requiredSheets As Variant
     Dim sheetName As Variant
 
-    requiredSheets = Array("MENU", "PARAM", "BALANCE_RAW", "GLPROOF_RAW")
+    requiredSheets = Array("PARAM", "BALANCE_RAW", "GLPROOF_RAW")
 
     For Each sheetName In requiredSheets
         If Not SheetExists(CStr(sheetName)) Then
@@ -147,8 +138,6 @@ Private Sub EnsureRequiredSheets()
 
             ' Configuration initiale selon le type de feuille
             Select Case CStr(sheetName)
-                Case "MENU"
-                    Call SetupMenuSheet(newSheet)
                 Case "PARAM"
                     Call SetupParamSheet(newSheet)
             End Select
@@ -163,34 +152,6 @@ Private Function SheetExists(sheetName As String) As Boolean
     On Error GoTo 0
     SheetExists = Not ws Is Nothing
 End Function
-
-Private Sub SetupMenuSheet(ws As Worksheet)
-    ' Configuration de la feuille MENU
-    With ws
-        .Cells.Clear
-
-        ' Titre
-        .Range("B2").Value = "S.A.F.A"
-        .Range("B2").Font.Size = 36
-        .Range("B2").Font.Bold = True
-        .Range("B2").Font.Color = RGB(0, 51, 102)
-
-        .Range("B3").Value = "System for Automated Financial Audit"
-        .Range("B3").Font.Size = 14
-        .Range("B3").Font.Italic = True
-
-        .Range("B4").Value = "Version " & Core_Engine.SAFA_VERSION
-        .Range("B4").Font.Size = 10
-
-        ' Instructions
-        .Range("B6").Value = "Le Cockpit de pilotage va s'afficher automatiquement..."
-        .Range("B7").Value = "Si ce n'est pas le cas, utilisez le raccourci Alt+F8 > Afficher_Cockpit"
-
-        ' Apparence
-        .Range("A1:Z100").Interior.Color = RGB(245, 245, 245)
-        .Columns("A").ColumnWidth = 5
-    End With
-End Sub
 
 Private Sub SetupParamSheet(ws As Worksheet)
     ' Configuration de la feuille PARAM
@@ -223,14 +184,23 @@ End Sub
 ' ==============================================================================
 
 Public Sub Lancer_Demarrage_Differe()
-    ' Point d'entrée pour le démarrage différé
+    ' Point d'entree historique: sequence de demarrage puis menu
     Call Core_Engine.Sequence_Demarrage
-    USF_Cockpit.Show
+    Call SAFA_Menu.OuvrirMenu
 End Sub
 
 Public Sub Afficher_Cockpit()
-    ' Afficher le Cockpit manuellement
-    USF_Cockpit.Show
+    ' Afficher le cockpit (feuille MENU a boutons; le mode console reste disponible via SAFA_Console.Demarrer)
+    Call SAFA_Menu.OuvrirMenu
+End Sub
+
+Private Sub Masquer_Feuilles_Techniques_Silencieux()
+    Dim ws As Worksheet
+    Dim technicalSheets As Variant
+    technicalSheets = Array("AUDIT_TRAIL", "CONFIG_DATA", "USERS", "HISTORY_LOG")
+    For Each ws In ThisWorkbook.Worksheets
+        If IsInArray(ws.Name, technicalSheets) Then ws.Visible = xlSheetVeryHidden
+    Next ws
 End Sub
 
 Public Sub Afficher_Toutes_Feuilles()

@@ -47,6 +47,51 @@ Public Const RISK_CRITICAL_THRESHOLD As Integer = 70
 Public Const RISK_HIGH_THRESHOLD As Integer = 50
 Public Const RISK_MEDIUM_THRESHOLD As Integer = 30
 
+' --- LAYOUTS CANONIQUES DES FEUILLES (source de verite unique) ---
+' RECONCIL: ecrit par Core_Engine.ConstruireRapprochement (A..N) + Advanced_AI.Finaliser_Rapport (O)
+Public Const RECONCIL_COL_COMPTE As Long = 1      ' A  AccountNumber
+Public Const RECONCIL_COL_LIBELLE As Long = 2     ' B  AccountName
+Public Const RECONCIL_COL_SOLDE_GL As Long = 3    ' C  Solde GL Proof
+Public Const RECONCIL_COL_SOLDE_BAL As Long = 4   ' D  Solde Balance
+Public Const RECONCIL_COL_ECART As Long = 5       ' E  Ecart
+Public Const RECONCIL_COL_STATUT As Long = 6      ' F  Statut
+Public Const RECONCIL_COL_NB_TRANS As Long = 7    ' G  Nb Trans.
+Public Const RECONCIL_COL_AGE_MAX As Long = 8     ' H  Age Max
+Public Const RECONCIL_COL_AGE_MOY As Long = 9     ' I  Age Moy.
+Public Const RECONCIL_COL_SOURCE As Long = 10     ' J  Source (Match / GL Only / Balance Only)
+Public Const RECONCIL_COL_TYPE As Long = 11       ' K  Type (classe OHADA)
+Public Const RECONCIL_COL_SCORE As Long = 12      ' L  Risk Score
+Public Const RECONCIL_COL_FACTEURS As Long = 13   ' M  Risk Factors
+Public Const RECONCIL_COL_PRIORITY As Long = 14   ' N  Priority (CRITICAL/HIGH/MEDIUM/LOW)
+Public Const RECONCIL_COL_PROVISION As Long = 15  ' O  Prov. IFRS9
+Public Const RECONCIL_LAST_COL As Long = 15
+
+' Valeurs de statut RECONCIL (doivent rester identiques a Core_Engine.DetermineStatus)
+Public Const RECONCIL_STATUT_OK As String = "OK"
+Public Const RECONCIL_STATUT_ECART As String = "Ecart à analyser"
+Public Const RECONCIL_STATUT_SANS_MVT As String = "Sans mouvement"
+
+' AUDIT_REPORT: ecrit par Forensic_Rules.AddForensicAlert et Advanced_AI.AddAIAlert (A..I)
+Public Const AUDIT_COL_REF As Long = 1            ' A  Ref (FRD-001, IA-002, BEN-001, VEL-001...)
+Public Const AUDIT_COL_CATEGORIE As Long = 2      ' B  Categorie (KEYWORD, WEEKEND, STRUCTURING...)
+Public Const AUDIT_COL_RISQUE As Long = 3         ' C  Risque (description courte)
+Public Const AUDIT_COL_NIVEAU As Long = 4         ' D  Niveau (CRITICAL/FRAUD/HIGH/MAJOR/MEDIUM/LOW/COMPLIANCE)
+Public Const AUDIT_COL_COMPTE As Long = 5         ' E  Compte
+Public Const AUDIT_COL_DESCRIPTION As Long = 6    ' F  Description / details
+Public Const AUDIT_COL_VALEUR As Long = 7         ' G  Valeur (montant)
+Public Const AUDIT_COL_IMPACT As Long = 8         ' H  Impact estime
+Public Const AUDIT_COL_SLA As Long = 9            ' I  SLA
+
+' COMPLIANCE_CHECK: ecrit par Regulatory_Compliance.Lancer_Verification_Conformite (A..H)
+Public Const COMPLIANCE_COL_ID As Long = 1
+Public Const COMPLIANCE_COL_REGLE As Long = 2
+Public Const COMPLIANCE_COL_REGLEMENTATION As Long = 3
+Public Const COMPLIANCE_COL_STATUT As Long = 4
+Public Const COMPLIANCE_COL_DETAILS As Long = 5
+Public Const COMPLIANCE_COL_IMPACT As Long = 6
+Public Const COMPLIANCE_COL_RECO As Long = 7
+Public Const COMPLIANCE_COL_PRIORITE As Long = 8
+
 ' Couleurs standard
 Public Const COLOR_HEADER As Long = 3368754      ' RGB(0, 51, 102)
 Public Const COLOR_CRITICAL As Long = 255        ' Rouge
@@ -86,26 +131,11 @@ End Type
 ' ==============================================================================
 
 Public Function ComputeHash(text As String) As String
-    ' Fonction de hash DJB2 - UNIQUE pour tout le système
-    ' Utilisée par: Audit Trail, Intégrité, Mots de passe, Transactions
-    Dim i As Long
-    Dim h As Double
-    Dim c As Long
-
-    h = HASH_SEED
-
-    For i = 1 To Len(text)
-        c = Asc(Mid(text, i, 1))
-        ' Utiliser Double pour éviter overflow sur Long
-        h = ((h * 33) + c)
-        ' Modulo pour garder dans les limites
-        If h > 2147483647 Then
-            h = h - 4294967296#
-        End If
-    Next i
-
-    ' Convertir en hex 8 caractères (toujours positif)
-    ComputeHash = Right("00000000" & Hex(Abs(h) And &H7FFFFFFF), 8)
+    ' Fonction de hash UNIQUE pour tout le systeme (journal d'audit, integrite, transactions).
+    ' Delegue a Crypto_Provider: SHA-256 reel (.NET) si disponible, sinon repli legacy.
+    ' Un journal d'audit ecrit avec un provider doit etre verifie avec le meme provider
+    ' (voir Crypto_Provider.ProviderName).
+    ComputeHash = Crypto_Provider.HashHex(text)
 End Function
 
 Public Function ComputeHashChain(currentData As String, previousHash As String) As String

@@ -1241,7 +1241,7 @@ End Sub
 ' ==============================================================================
 
 Public Sub Afficher_Cockpit()
-    ' CORRIGÉ: Utiliser SAFA_Console au lieu de USF_Cockpit (formulaire non disponible)
+    ' CORRIGÉ: Utiliser SAFA_Console au lieu de feuille MENU (SAFA_Menu) (formulaire non disponible)
     On Error Resume Next
     Call SAFA_Console.Demarrer
     On Error GoTo 0
@@ -1249,7 +1249,7 @@ End Sub
 
 Public Sub Lancer_Demarrage_Differe()
     Call Sequence_Demarrage
-    ' CORRIGÉ: Utiliser SAFA_Console au lieu de USF_Cockpit
+    ' CORRIGÉ: Utiliser SAFA_Console au lieu de feuille MENU (SAFA_Menu)
     Call SAFA_Console.Demarrer
 End Sub
 

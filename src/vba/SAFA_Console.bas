@@ -46,6 +46,11 @@ Public Sub Demarrer()
             Case Else
                 MsgBox "Choix invalide. Veuillez reessayer.", vbExclamation
         End Select
+
+        ' Rafraichir le panneau de statut de la feuille MENU (si presente)
+        On Error Resume Next
+        Call SAFA_Menu.RefreshStatus
+        On Error GoTo 0
     Loop
 
     MsgBox "Merci d'avoir utilise S.A.F.A!", vbInformation, "Au revoir"
@@ -77,7 +82,7 @@ End Function
 '===============================================================================
 ' PROCEDURE: ImporterBalance
 '===============================================================================
-Private Sub ImporterBalance()
+Public Sub ImporterBalance()
     Dim filePath As String
     Dim result As Data_Ingestion.ImportResult
 
@@ -107,7 +112,7 @@ End Sub
 '===============================================================================
 ' PROCEDURE: ImporterGLProof
 '===============================================================================
-Private Sub ImporterGLProof()
+Public Sub ImporterGLProof()
     Dim filePath As String
     Dim result As Data_Ingestion.ImportResult
 
@@ -137,7 +142,7 @@ End Sub
 '===============================================================================
 ' PROCEDURE: DefinirParametres
 '===============================================================================
-Private Sub DefinirParametres()
+Public Sub DefinirParametres()
     Dim solId As String
     Dim tolerance As String
     Dim wsParam As Worksheet
@@ -178,7 +183,7 @@ End Sub
 '===============================================================================
 ' PROCEDURE: LancerAnalyse
 '===============================================================================
-Private Sub LancerAnalyse()
+Public Sub LancerAnalyse()
     Dim wsBal As Worksheet, wsGL As Worksheet
     Dim nbBal As Long, nbGL As Long
     Dim rep As Integer
@@ -238,7 +243,7 @@ End Sub
 '===============================================================================
 ' PROCEDURE: AfficherRapports
 '===============================================================================
-Private Sub AfficherRapports()
+Public Sub AfficherRapports()
     On Error GoTo ErrHandler
 
     Dim choix As String
@@ -303,7 +308,7 @@ End Sub
 '===============================================================================
 ' PROCEDURE: AnalysesAvancees
 '===============================================================================
-Private Sub AnalysesAvancees()
+Public Sub AnalysesAvancees()
     On Error GoTo ErrHandler
 
     Dim choix As String
@@ -417,7 +422,7 @@ End Sub
 '===============================================================================
 ' PROCEDURE: GenererTousRapports
 '===============================================================================
-Private Sub GenererTousRapports()
+Public Sub GenererTousRapports()
     On Error Resume Next
 
     MsgBox "Generation de tous les rapports..." & vbCrLf & _
@@ -449,7 +454,7 @@ End Sub
 '===============================================================================
 ' PROCEDURE: AfficherStatut
 '===============================================================================
-Private Sub AfficherStatut()
+Public Sub AfficherStatut()
     Dim status As String
     Dim nbBal As Long, nbGL As Long, nbRec As Long, nbAlerts As Long
 
@@ -498,7 +503,7 @@ End Sub
 '===============================================================================
 ' PROCEDURE: Reinitialiser
 '===============================================================================
-Private Sub Reinitialiser()
+Public Sub Reinitialiser()
     Dim rep As Integer
 
     rep = MsgBox("Voulez-vous vraiment reinitialiser?" & vbCrLf & vbCrLf & _
@@ -517,6 +522,7 @@ End Sub
 Private Sub ActiverFeuille(nomFeuille As String)
     On Error Resume Next
     If Core_Engine.FeuilleExiste(nomFeuille) Then
+        ThisWorkbook.Sheets(nomFeuille).Visible = xlSheetVisible
         ThisWorkbook.Sheets(nomFeuille).Activate
     Else
         MsgBox "La feuille " & nomFeuille & " n'existe pas encore." & vbCrLf & _
@@ -543,9 +549,12 @@ Private Sub InitialiserFeuillesBase()
         ws.Range("A1:B1").Font.Bold = True
         ws.Range("A2").Value = "Tolerance"
         ws.Range("B2").Value = 100
+        ' Patterns d'exclusion (Non-Proofable): comptes techniques, PAS les suspens/transit
+        ' (les suspens et transit doivent etre analyses pour les controles COBAC)
         ws.Range("D1").Value = "Patterns Exclusion"
-        ws.Range("D2").Value = "SUSPENS"
-        ws.Range("D3").Value = "TRANSIT"
+        ws.Range("D2").Value = "ISO"
+        ws.Range("D3").Value = "NOSTRO"
+        ws.Range("D4").Value = "VOSTRO"
         ws.Range("F1").Value = "SOL ID"
         ws.Range("F2").Value = "799"
     End If
@@ -558,4 +567,173 @@ End Sub
 '===============================================================================
 Public Sub LancerSAFA()
     Call Demarrer
+End Sub
+
+'===============================================================================
+' POINTS D'ENTREE DIRECTS (boutons de la feuille MENU - SAFA_Menu.BuildMenu)
+' Chaque bouton appelle une action unique, sans passer par les menus InputBox.
+'===============================================================================
+
+Public Sub OuvrirDashboard()
+    On Error Resume Next
+    If Not Core_Engine.FeuilleExiste("RECONCIL") Then
+        MsgBox "Lancez d'abord l'analyse complete.", vbExclamation, "S.A.F.A": Exit Sub
+    End If
+    If Not Core_Engine.FeuilleExiste("DASHBOARD_RISQUE") Then Call Report_Generator.GenerateRiskDashboard(ThisWorkbook)
+    Call ActiverFeuille("DASHBOARD_RISQUE")
+End Sub
+
+Public Sub OuvrirAlertes()
+    On Error Resume Next
+    If Not Core_Engine.FeuilleExiste("AUDIT_REPORT") Then
+        MsgBox "Aucune alerte: lancez d'abord l'analyse complete.", vbExclamation, "S.A.F.A": Exit Sub
+    End If
+    Call Report_Generator.GenerateAlertReport(ThisWorkbook)
+    Call ActiverFeuille("AUDIT_REPORT")
+End Sub
+
+Public Sub OuvrirConformite()
+    On Error Resume Next
+    If Not Core_Engine.FeuilleExiste("RECONCIL") Then
+        MsgBox "Lancez d'abord l'analyse complete.", vbExclamation, "S.A.F.A": Exit Sub
+    End If
+    If Not Core_Engine.FeuilleExiste("COMPLIANCE_CHECK") Then Call Regulatory_Compliance.Lancer_Verification_Conformite
+    Call ActiverFeuille("COMPLIANCE_CHECK")
+End Sub
+
+Public Sub OuvrirSynthese()
+    On Error Resume Next
+    If Not Core_Engine.FeuilleExiste("RECONCIL") Then
+        MsgBox "Lancez d'abord l'analyse complete.", vbExclamation, "S.A.F.A": Exit Sub
+    End If
+    If Not Core_Engine.FeuilleExiste("EXECUTIVE_SUMMARY") Then Call Report_Generator.GenerateExecutiveSummary(ThisWorkbook)
+    Call ActiverFeuille("EXECUTIVE_SUMMARY")
+End Sub
+
+Public Sub OuvrirEchantillon()
+    On Error Resume Next
+    If Not Core_Engine.FeuilleExiste("RECONCIL") Then
+        MsgBox "Lancez d'abord l'analyse complete.", vbExclamation, "S.A.F.A": Exit Sub
+    End If
+    Call Report_Generator.GenerateSampleSheet(ThisWorkbook)
+    Call ActiverFeuille("ECHANTILLON_TEST")
+End Sub
+
+Public Sub OuvrirJournalAudit()
+    On Error Resume Next
+    If Core_Engine.FeuilleExiste("AUDIT_TRAIL") Then
+        Call ActiverFeuille("AUDIT_TRAIL")
+    Else
+        MsgBox "Le journal d'audit n'existe pas encore.", vbInformation, "S.A.F.A"
+    End If
+End Sub
+
+Public Sub ExporterPDF()
+    On Error GoTo ErrHandler
+    If Not Core_Engine.FeuilleExiste("RECONCIL") Then
+        MsgBox "Lancez d'abord l'analyse complete.", vbExclamation, "S.A.F.A": Exit Sub
+    End If
+    Call Report_Generator.ExportToPDF(ThisWorkbook)
+    Exit Sub
+ErrHandler:
+    MsgBox "Export PDF impossible: " & Err.Description, vbCritical, "S.A.F.A"
+End Sub
+
+Public Sub LancerTemporel()
+    On Error GoTo ErrHandler
+    If Not Core_Engine.FeuilleExiste("RECONCIL") Then
+        MsgBox "Lancez d'abord l'analyse complete.", vbExclamation, "S.A.F.A": Exit Sub
+    End If
+    Application.ScreenUpdating = False
+    Call Temporal_Analysis.Lancer_Analyse_Temporelle
+    Application.ScreenUpdating = True
+    Call ActiverFeuille("TEMPORAL_ANALYSIS")
+    Exit Sub
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "Analyse temporelle: " & Err.Description, vbCritical, "S.A.F.A"
+End Sub
+
+Public Sub LancerReseau()
+    On Error GoTo ErrHandler
+    If Not Core_Engine.FeuilleExiste("TRANSACTION_DATA") Then
+        MsgBox "Lancez d'abord l'analyse complete (TRANSACTION_DATA requis).", vbExclamation, "S.A.F.A": Exit Sub
+    End If
+    Application.ScreenUpdating = False
+    Call Network_Analysis.Lancer_Analyse_Reseau
+    Application.ScreenUpdating = True
+    Call ActiverFeuille("NETWORK_ANALYSIS")
+    Exit Sub
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "Analyse reseau: " & Err.Description, vbCritical, "S.A.F.A"
+End Sub
+
+Public Sub LancerDiagnostic()
+    On Error GoTo ErrHandler
+    Dim health As Auto_Diagnostic.SystemHealth
+    Application.ScreenUpdating = False
+    health = Auto_Diagnostic.LancerDiagnosticComplet()
+    Application.ScreenUpdating = True
+    Call ActiverFeuille("SYSTEM_DIAGNOSTIC")
+    MsgBox "Diagnostic termine - score global: " & health.OverallScore & "/100", vbInformation, "S.A.F.A"
+    Exit Sub
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "Diagnostic: " & Err.Description, vbCritical, "S.A.F.A"
+End Sub
+
+Public Sub LancerTests()
+    On Error GoTo ErrHandler
+    Call SAFA_Tests.RunSmokeTestUI
+    Exit Sub
+ErrHandler:
+    MsgBox "Tests: " & Err.Description, vbCritical, "S.A.F.A"
+End Sub
+
+Public Sub ChargerDonneesDemo()
+    On Error GoTo ErrHandler
+    If MsgBox("Generer un jeu de donnees de demonstration ?" & vbCrLf & vbCrLf & _
+              "Les feuilles BALANCE_RAW et GLPROOF_RAW seront REMPLACEES par des donnees fictives" & vbCrLf & _
+              "(300 comptes, ~4 000 ecritures, anomalies injectees pour tester les detecteurs).", _
+              vbYesNo + vbQuestion, "Donnees de demonstration") = vbNo Then Exit Sub
+    Application.ScreenUpdating = False
+    Call Demo_Data.GenerateDemoData
+    Application.ScreenUpdating = True
+    MsgBox "Donnees de demonstration chargees." & vbCrLf & "Cliquez maintenant sur LANCER L'ANALYSE COMPLETE.", vbInformation, "S.A.F.A"
+    Exit Sub
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "Donnees demo: " & Err.Description, vbCritical, "S.A.F.A"
+End Sub
+
+Public Sub AfficherConfiguration()
+    On Error Resume Next
+    Dim cfg As Config_Manager.FullConfig
+    cfg = Config_Manager.GetConfig()
+    MsgBox "CONFIGURATION ACTIVE" & vbCrLf & vbCrLf & _
+           "Tolerance: " & cfg.General.DefaultTolerance & " XAF" & vbCrLf & _
+           "Devise: " & cfg.General.DefaultCurrency & "   SOL ID: " & cfg.General.DefaultSolId & vbCrLf & vbCrLf & _
+           "Z-Score warning / critical: " & cfg.Forensic.ZScoreWarning & " / " & cfg.Forensic.ZScoreCritical & vbCrLf & _
+           "Benford Chi2 critique: " & cfg.Forensic.BenfordChiSquaredCritical & "   MAD marginal: " & cfg.Forensic.BenfordMADMarginal & vbCrLf & _
+           "Weekend seuil: " & Format(cfg.Forensic.WeekendThreshold, "#,##0") & " XAF" & vbCrLf & vbCrLf & _
+           "COBAC suspens / transit: " & cfg.Regulatory.CobacSuspensLimitDays & " j / " & cfg.Regulatory.CobacTransitLimitDays & " j" & vbCrLf & _
+           "LAB/FT declaration: " & Format(cfg.Regulatory.LabftDeclarationThreshold, "#,##0") & " XAF" & vbCrLf & _
+           "LAB/FT structuration: " & Format(cfg.Regulatory.LabftStructuringThreshold, "#,##0") & " XAF" & vbCrLf & vbCrLf & _
+           "Seuils risque C/H/M: " & cfg.RiskScoring.ThresholdCritical & " / " & cfg.RiskScoring.ThresholdHigh & " / " & cfg.RiskScoring.ThresholdMedium & vbCrLf & vbCrLf & _
+           "Modifiable dans la feuille CONFIG_DATA (Config_Manager.SaveConfigurationToSheet) ou config\settings.json", _
+           vbInformation, "S.A.F.A - Configuration"
+End Sub
+
+Public Sub AfficherAide()
+    MsgBox "S.A.F.A v" & SAFA_Common.SAFA_VERSION & " - System for Automated Financial Audit" & vbCrLf & vbCrLf & _
+           "1. Importer Balance Finacle  (ou Donnees demo pour tester)" & vbCrLf & _
+           "2. Importer GL Proof" & vbCrLf & _
+           "3. Verifier Parametres (SOL ID, tolerance)" & vbCrLf & _
+           "4. LANCER L'ANALYSE COMPLETE" & vbCrLf & _
+           "5. Consulter Dashboard / Alertes / Conformite / Synthese" & vbCrLf & _
+           "6. Analyses avancees: Temporel, Reseau, Diagnostic" & vbCrLf & vbCrLf & _
+           "Tests: le bouton Tests genere des donnees demo, lance tout le pipeline" & vbCrLf & _
+           "et verifie que chaque anomalie injectee est detectee (feuille TEST_RESULTS).", _
+           vbInformation, "Aide S.A.F.A"
 End Sub

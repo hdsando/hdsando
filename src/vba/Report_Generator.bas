@@ -80,6 +80,9 @@ Public Sub GenerateFullReport(Optional outputPath As String = "")
         GenerateComplianceReport wb
     End If
 
+    ' Generer echantillon de test (Top 20)
+    GenerateSampleSheet wb
+
     ' Exporter en PDF si demande
     If mReportConfig.OutputFormat = "PDF" Or mReportConfig.OutputFormat = "BOTH" Then
         ExportToPDF wb
@@ -106,8 +109,7 @@ Public Sub GenerateExecutiveSummary(wb As Workbook)
     Dim wsAudit As Worksheet
     Dim rowNum As Long
 
-    ' CORRIGÉ BUG-003: Utiliser GetOrCreateSheet pour éviter conflits
-    Set ws = Core_Engine.GetOrCreateSheet("EXECUTIVE_SUMMARY", True)
+    Set ws = PrepareReportSheet("EXECUTIVE_SUMMARY")
 
     ' Recuperer les donnees sources
     On Error Resume Next
@@ -159,18 +161,23 @@ Public Sub GenerateExecutiveSummary(wb As Workbook)
         Dim highAlerts As Long
         Dim totalRisk As Double
 
+        ' Colonnes RECONCIL / AUDIT_REPORT: constantes canoniques SAFA_Common (source: Core_Engine.ConstruireRapprochement)
+        Dim ecartRecords As Long, totalProvision As Double
         If Not wsReconcil Is Nothing Then
-            totalRecords = Application.WorksheetFunction.CountA(wsReconcil.Columns(1)) - 1
+            totalRecords = Application.WorksheetFunction.CountA(wsReconcil.Columns(SAFA_Common.RECONCIL_COL_COMPTE)) - 1
             On Error Resume Next
-            matchedRecords = Application.WorksheetFunction.CountIf(wsReconcil.Columns("J"), "OK*")
-            orphanRecords = totalRecords - matchedRecords
+            matchedRecords = Application.WorksheetFunction.CountIf(wsReconcil.Columns(SAFA_Common.RECONCIL_COL_STATUT), SAFA_Common.RECONCIL_STATUT_OK)
+            ecartRecords = Application.WorksheetFunction.CountIf(wsReconcil.Columns(SAFA_Common.RECONCIL_COL_STATUT), SAFA_Common.RECONCIL_STATUT_ECART)
+            orphanRecords = Application.WorksheetFunction.CountIf(wsReconcil.Columns(SAFA_Common.RECONCIL_COL_SOURCE), "*Only")
+            totalProvision = Application.WorksheetFunction.Sum(wsReconcil.Columns(SAFA_Common.RECONCIL_COL_PROVISION))
             On Error GoTo ErrorHandler
         End If
 
         If Not wsAudit Is Nothing Then
             On Error Resume Next
-            criticalAlerts = Application.WorksheetFunction.CountIf(wsAudit.Columns("C"), "CRITICAL")
-            highAlerts = Application.WorksheetFunction.CountIf(wsAudit.Columns("C"), "HIGH")
+            criticalAlerts = Application.WorksheetFunction.CountIf(wsAudit.Columns(SAFA_Common.AUDIT_COL_NIVEAU), "CRITICAL") _
+                           + Application.WorksheetFunction.CountIf(wsAudit.Columns(SAFA_Common.AUDIT_COL_NIVEAU), "FRAUD")
+            highAlerts = Application.WorksheetFunction.CountIf(wsAudit.Columns(SAFA_Common.AUDIT_COL_NIVEAU), "HIGH")
             On Error GoTo ErrorHandler
         End If
 
@@ -186,10 +193,21 @@ Public Sub GenerateExecutiveSummary(wb As Workbook)
         .Cells(rowNum, 3).Value = FormatPercent(IIf(totalRecords > 0, matchedRecords / totalRecords, 0), 1)
         rowNum = rowNum + 1
 
-        .Cells(rowNum, 1).Value = "Orphelins detectes:"
+        .Cells(rowNum, 1).Value = "Ecarts a analyser:"
+        .Cells(rowNum, 2).Value = ecartRecords
+        .Cells(rowNum, 2).NumberFormat = "#,##0"
+        If ecartRecords > 0 Then .Cells(rowNum, 2).Interior.Color = RGB(255, 230, 200)
+        rowNum = rowNum + 1
+
+        .Cells(rowNum, 1).Value = "Orphelins (GL seul / Balance seule):"
         .Cells(rowNum, 2).Value = orphanRecords
         .Cells(rowNum, 2).NumberFormat = "#,##0"
         If orphanRecords > 0 Then .Cells(rowNum, 2).Interior.Color = RGB(255, 200, 200)
+        rowNum = rowNum + 1
+
+        .Cells(rowNum, 1).Value = "Provision IFRS 9 estimee (XAF):"
+        .Cells(rowNum, 2).Value = totalProvision
+        .Cells(rowNum, 2).NumberFormat = "#,##0"
         rowNum = rowNum + 1
 
         .Cells(rowNum, 1).Value = "Alertes CRITICAL:"
@@ -284,8 +302,7 @@ Public Sub GenerateRiskDashboard(wb As Workbook)
     Dim rowNum As Long
     Dim chartObj As ChartObject
 
-    ' CORRIGÉ BUG-003: Utiliser GetOrCreateSheet pour éviter conflits
-    Set ws = Core_Engine.GetOrCreateSheet("DASHBOARD_RISQUE", True)
+    Set ws = PrepareReportSheet("DASHBOARD_RISQUE")
 
     Set wsReconcil = Nothing
     On Error Resume Next
@@ -318,64 +335,53 @@ Public Sub GenerateRiskDashboard(wb As Workbook)
         .Range(.Cells(rowNum, 1), .Cells(rowNum, 4)).Interior.Color = RGB(200, 200, 200)
         rowNum = rowNum + 1
 
-        Dim critCount As Long, highCount As Long, medCount As Long, lowCount As Long
-        Dim totalCount As Long
+        ' Distribution par priorite: nombre ET montant (|Ecart|) - lu depuis RECONCIL (colonnes canoniques)
+        Dim prioNames As Variant, prioColors As Variant
+        Dim prioCount(0 To 3) As Long, prioSum(0 To 3) As Double
+        Dim totalCount As Long, k As Long
+        Dim recData As Variant, lastRec As Long, p As Long
+
+        prioNames = Array("CRITICAL", "HIGH", "MEDIUM", "LOW")
+        prioColors = Array(RGB(255, 100, 100), RGB(255, 200, 100), RGB(255, 255, 150), RGB(150, 255, 150))
 
         If Not wsReconcil Is Nothing Then
-            On Error Resume Next
-            ' CORRIGÉ BUG-004: La colonne Priority est en N (col 14), pas en K
-            ' Structure RECONCIL: A=Compte, B=Libelle, C=Balance, D=GL, E=Ecart, F=Status,
-            '                     G=Anciennete, H=NbTrans, I=DateMin, J=DateMax, K=Score,
-            '                     L=Facteurs, M=Provisions, N=Priority
-            critCount = Application.WorksheetFunction.CountIf(wsReconcil.Columns("N"), "CRITICAL")
-            highCount = Application.WorksheetFunction.CountIf(wsReconcil.Columns("N"), "HIGH")
-            medCount = Application.WorksheetFunction.CountIf(wsReconcil.Columns("N"), "MEDIUM")
-            lowCount = Application.WorksheetFunction.CountIf(wsReconcil.Columns("N"), "LOW")
-            totalCount = critCount + highCount + medCount + lowCount
-            On Error GoTo ErrorHandler
+            lastRec = wsReconcil.Cells(wsReconcil.Rows.Count, SAFA_Common.RECONCIL_COL_COMPTE).End(xlUp).Row
+            If lastRec >= 2 Then
+                recData = wsReconcil.Range(wsReconcil.Cells(2, 1), wsReconcil.Cells(lastRec, SAFA_Common.RECONCIL_COL_PRIORITY)).Value
+                For k = 1 To UBound(recData, 1)
+                    For p = 0 To 3
+                        If UCase(SAFA_Common.SafeText(recData(k, SAFA_Common.RECONCIL_COL_PRIORITY))) = prioNames(p) Then
+                            prioCount(p) = prioCount(p) + 1
+                            prioSum(p) = prioSum(p) + Abs(SAFA_Common.SafeVal(recData(k, SAFA_Common.RECONCIL_COL_ECART)))
+                            Exit For
+                        End If
+                    Next p
+                Next k
+            End If
         End If
+        totalCount = prioCount(0) + prioCount(1) + prioCount(2) + prioCount(3)
 
-        ' CRITICAL
-        .Cells(rowNum, 1).Value = "CRITICAL"
-        .Cells(rowNum, 2).Value = critCount
-        .Cells(rowNum, 3).Value = IIf(totalCount > 0, critCount / totalCount, 0)
-        .Cells(rowNum, 3).NumberFormat = "0.0%"
-        .Range(.Cells(rowNum, 1), .Cells(rowNum, 4)).Interior.Color = RGB(255, 100, 100)
+        For p = 0 To 3
+            .Cells(rowNum, 1).Value = prioNames(p)
+            .Cells(rowNum, 2).Value = prioCount(p)
+            .Cells(rowNum, 3).Value = IIf(totalCount > 0, prioCount(p) / totalCount, 0)
+            .Cells(rowNum, 3).NumberFormat = "0.0%"
+            .Cells(rowNum, 4).Value = prioSum(p)
+            .Cells(rowNum, 4).NumberFormat = "#,##0"
+            .Range(.Cells(rowNum, 1), .Cells(rowNum, 4)).Interior.Color = prioColors(p)
+            rowNum = rowNum + 1
+        Next p
         rowNum = rowNum + 1
 
-        ' HIGH
-        .Cells(rowNum, 1).Value = "HIGH"
-        .Cells(rowNum, 2).Value = highCount
-        .Cells(rowNum, 3).Value = IIf(totalCount > 0, highCount / totalCount, 0)
-        .Cells(rowNum, 3).NumberFormat = "0.0%"
-        .Range(.Cells(rowNum, 1), .Cells(rowNum, 4)).Interior.Color = RGB(255, 200, 100)
-        rowNum = rowNum + 1
-
-        ' MEDIUM
-        .Cells(rowNum, 1).Value = "MEDIUM"
-        .Cells(rowNum, 2).Value = medCount
-        .Cells(rowNum, 3).Value = IIf(totalCount > 0, medCount / totalCount, 0)
-        .Cells(rowNum, 3).NumberFormat = "0.0%"
-        .Range(.Cells(rowNum, 1), .Cells(rowNum, 4)).Interior.Color = RGB(255, 255, 150)
-        rowNum = rowNum + 1
-
-        ' LOW
-        .Cells(rowNum, 1).Value = "LOW"
-        .Cells(rowNum, 2).Value = lowCount
-        .Cells(rowNum, 3).Value = IIf(totalCount > 0, lowCount / totalCount, 0)
-        .Cells(rowNum, 3).NumberFormat = "0.0%"
-        .Range(.Cells(rowNum, 1), .Cells(rowNum, 4)).Interior.Color = RGB(150, 255, 150)
-        rowNum = rowNum + 2
-
-        ' Creer graphique camembert
+        ' Graphique de repartition (barres: lisibles et comparables, contrairement au camembert)
         If totalCount > 0 Then
             Set chartObj = .ChartObjects.Add(Left:=300, Top:=50, Width:=350, Height:=250)
             With chartObj.Chart
-                .ChartType = xlPie
+                .ChartType = xlBarClustered
                 .SetSourceData Source:=ws.Range(ws.Cells(rowNum - 5, 1), ws.Cells(rowNum - 2, 2))
                 .HasTitle = True
-                .ChartTitle.Text = "Repartition des Risques"
-                .ApplyDataLabels xlDataLabelsShowPercent
+                .ChartTitle.Text = "Comptes par niveau de risque"
+                .HasLegend = False
             End With
         End If
 
@@ -392,16 +398,32 @@ Public Sub GenerateRiskDashboard(wb As Workbook)
         .Cells(rowNum, 4).Value = "Score"
         .Cells(rowNum, 5).Value = "Niveau"
         .Cells(rowNum, 6).Value = "Ecart"
-        .Range(.Cells(rowNum, 1), .Cells(rowNum, 6)).Font.Bold = True
-        .Range(.Cells(rowNum, 1), .Cells(rowNum, 6)).Interior.Color = RGB(200, 200, 200)
+        .Cells(rowNum, 7).Value = "Facteurs"
+        .Range(.Cells(rowNum, 1), .Cells(rowNum, 7)).Font.Bold = True
+        .Range(.Cells(rowNum, 1), .Cells(rowNum, 7)).Interior.Color = RGB(200, 200, 200)
         rowNum = rowNum + 1
 
-        ' Extraire Top 10 depuis RECONCIL (simulation)
-        Dim i As Integer
-        For i = 1 To 10
-            .Cells(rowNum, 1).Value = i
+        ' Top 10 reel: RECONCIL trie par Risk Score decroissant (sans modifier la feuille source)
+        Dim topAcc As Variant, i As Long
+        If Not wsReconcil Is Nothing Then topAcc = GetTopAccountsByScore(wsReconcil, 10)
+        If IsArray(topAcc) Then
+            For i = 1 To UBound(topAcc, 1)
+                .Cells(rowNum, 1).Value = i
+                .Cells(rowNum, 2).Value = topAcc(i, 1)
+                .Cells(rowNum, 2).NumberFormat = "@"
+                .Cells(rowNum, 3).Value = topAcc(i, 2)
+                .Cells(rowNum, 4).Value = topAcc(i, 4)
+                .Cells(rowNum, 5).Value = topAcc(i, 5)
+                .Cells(rowNum, 6).Value = topAcc(i, 3)
+                .Cells(rowNum, 6).NumberFormat = "#,##0"
+                .Cells(rowNum, 7).Value = topAcc(i, 6)
+                Call ColorPriorityCell(.Cells(rowNum, 5))
+                rowNum = rowNum + 1
+            Next i
+        Else
+            .Cells(rowNum, 2).Value = "Aucune donnee RECONCIL - lancez d'abord l'analyse"
             rowNum = rowNum + 1
-        Next i
+        End If
 
         ' Mise en forme finale
         .Columns("A:H").AutoFit
@@ -434,22 +456,13 @@ Public Sub GenerateAlertReport(wb As Workbook)
         ws.Name = "AUDIT_REPORT"
     End If
 
-    ' Ajouter timestamp et resume
+    ' AUDIT_REPORT est ecrit par Forensic_Rules / Advanced_AI (layout canonique SAFA_Common.AUDIT_COL_*).
+    ' On ne reecrit JAMAIS l'en-tete existant (l'ancien code l'ecrasait avec un layout different).
     With ws
-        ' Verifier si en-tete existe
-        If .Cells(1, 1).Value <> "ID" Then
-            ' Creer en-tete
+        If SAFA_Common.SafeText(.Cells(1, 1).Value) = "" Then
             rowNum = 1
-            .Cells(rowNum, 1).Value = "ID"
-            .Cells(rowNum, 2).Value = "REGLE"
-            .Cells(rowNum, 3).Value = "SEVERITE"
-            .Cells(rowNum, 4).Value = "COMPTE"
-            .Cells(rowNum, 5).Value = "DESCRIPTION"
-            .Cells(rowNum, 6).Value = "MONTANT"
-            .Cells(rowNum, 7).Value = "DATE_DETECT"
-            .Cells(rowNum, 8).Value = "STATUT"
-            .Cells(rowNum, 9).Value = "COMMENTAIRE"
-
+            .Range(.Cells(rowNum, 1), .Cells(rowNum, 9)).Value = Array("Ref", "Categorie", "Risque", "Niveau", "Compte", _
+                                                                     "Description", "Valeur", "Impact Est.", "SLA")
             .Range(.Cells(rowNum, 1), .Cells(rowNum, 9)).Font.Bold = True
             .Range(.Cells(rowNum, 1), .Cells(rowNum, 9)).Interior.Color = RGB(0, 51, 102)
             .Range(.Cells(rowNum, 1), .Cells(rowNum, 9)).Font.Color = vbWhite
@@ -460,9 +473,9 @@ Public Sub GenerateAlertReport(wb As Workbook)
         lastRow = .Cells(.Rows.Count, 1).End(xlUp).Row
 
         If lastRow > 1 Then
-            ' Couleur selon severite
+            ' Couleur selon severite (colonne Niveau)
             Dim rng As Range
-            Set rng = .Range(.Cells(2, 3), .Cells(lastRow, 3))
+            Set rng = .Range(.Cells(2, SAFA_Common.AUDIT_COL_NIVEAU), .Cells(lastRow, SAFA_Common.AUDIT_COL_NIVEAU))
 
             ' Supprimer formatage conditionnel existant
             rng.FormatConditions.Delete
@@ -510,8 +523,15 @@ Public Sub GenerateForensicReport(wb As Workbook)
     Dim ws As Worksheet
     Dim rowNum As Long
 
-    ' CORRIGÉ BUG-003: Utiliser GetOrCreateSheet pour éviter conflits
-    Set ws = Core_Engine.GetOrCreateSheet("FORENSIC_ANALYSIS", True)
+    ' FORENSIC_ANALYSIS est la feuille de resultats Benford ecrite par Forensic_Rules (on la LIT, on ne l'ecrase plus).
+    ' Le rapport de synthese forensique est ecrit dans FORENSIC_REPORT.
+    Dim wsBenford As Worksheet, wsAudit As Worksheet
+    On Error Resume Next
+    Set wsBenford = wb.Sheets("FORENSIC_ANALYSIS")
+    Set wsAudit = wb.Sheets("AUDIT_REPORT")
+    On Error GoTo ErrorHandler
+
+    Set ws = PrepareReportSheet("FORENSIC_REPORT")
 
     rowNum = 1
 
@@ -547,27 +567,79 @@ Public Sub GenerateForensicReport(wb As Workbook)
         benford(4) = 9.7: benford(5) = 7.9: benford(6) = 6.7
         benford(7) = 5.8: benford(8) = 5.1: benford(9) = 4.6
 
-        Dim d As Integer
+        ' Valeurs reelles: lues dans FORENSIC_ANALYSIS (Forensic_Rules.Lancer_Benford_Enhanced),
+        ' tableau en lignes 9..17: A=Chiffre, B=Observe (nb), C=Attendu (nb), D=Freq reelle, E=Freq theorique, F=Ecart, G=Statut
+        Dim d As Integer, obsCount(1 To 9) As Double, totalObs As Double
+        Dim chiSq As Double, madVal As Double, benfordOK As Boolean
+        Dim cfgF As Config_Manager.ForensicConfig
+        cfgF = Config_Manager.GetForensicConfig()
+
+        benfordOK = False
+        If Not wsBenford Is Nothing Then
+            On Error Resume Next
+            For d = 1 To 9
+                obsCount(d) = SAFA_Common.SafeVal(wsBenford.Cells(8 + d, 2).Value)
+                totalObs = totalObs + obsCount(d)
+            Next d
+            On Error GoTo ErrorHandler
+            benfordOK = (totalObs > 0)
+        End If
+
         For d = 1 To 9
             .Cells(rowNum, 1).Value = d
             .Cells(rowNum, 2).Value = benford(d) / 100
             .Cells(rowNum, 2).NumberFormat = "0.0%"
-            .Cells(rowNum, 3).Value = 0 ' A remplir par analyse reelle
+            If benfordOK Then
+                .Cells(rowNum, 3).Value = obsCount(d) / totalObs
+                .Cells(rowNum, 4).Value = obsCount(d) / totalObs - benford(d) / 100
+                .Cells(rowNum, 4).NumberFormat = "+0.0%;-0.0%"
+                If Abs(.Cells(rowNum, 4).Value) > 0.05 Then
+                    .Cells(rowNum, 5).Value = "ANOMALIE"
+                    .Cells(rowNum, 5).Interior.Color = RGB(255, 200, 200)
+                Else
+                    .Cells(rowNum, 5).Value = "Conforme"
+                End If
+                ' Chi-squared et MAD recalcules a partir des comptages (pas de parsing de texte)
+                chiSq = chiSq + ((obsCount(d) - totalObs * benford(d) / 100) ^ 2) / (totalObs * benford(d) / 100)
+                madVal = madVal + Abs(obsCount(d) / totalObs - benford(d) / 100)
+            Else
+                .Cells(rowNum, 3).Value = "n/a"
+            End If
             .Cells(rowNum, 3).NumberFormat = "0.0%"
             rowNum = rowNum + 1
         Next d
+        madVal = madVal / 9
 
         rowNum = rowNum + 1
 
         ' Metriques Benford
+        .Cells(rowNum, 1).Value = "Echantillon (nb montants):"
+        .Cells(rowNum, 2).Value = IIf(benfordOK, totalObs, "n/a")
+        .Cells(rowNum, 2).NumberFormat = "#,##0"
+        If benfordOK And totalObs < cfgF.BenfordMinSampleSize Then .Cells(rowNum, 3).Value = "Echantillon < " & cfgF.BenfordMinSampleSize & " : test peu fiable"
+        rowNum = rowNum + 1
+
         .Cells(rowNum, 1).Value = "Chi-squared:"
-        .Cells(rowNum, 2).Value = "N/A"
-        .Cells(rowNum, 3).Value = "(Seuil critique: 15.51)"
+        .Cells(rowNum, 2).Value = IIf(benfordOK, Round(chiSq, 2), "n/a")
+        .Cells(rowNum, 3).Value = "(Seuil critique 5%, 8 ddl: " & cfgF.BenfordChiSquaredCritical & ")"
+        If benfordOK And chiSq > cfgF.BenfordChiSquaredCritical Then .Cells(rowNum, 2).Interior.Color = RGB(255, 200, 200)
         rowNum = rowNum + 1
 
         .Cells(rowNum, 1).Value = "MAD:"
-        .Cells(rowNum, 2).Value = "N/A"
-        .Cells(rowNum, 3).Value = "(< 0.006 = Excellent, < 0.012 = Acceptable)"
+        .Cells(rowNum, 2).Value = IIf(benfordOK, Round(madVal, 4), "n/a")
+        .Cells(rowNum, 3).Value = "(< " & cfgF.BenfordMADExcellent & " Excellent, < " & cfgF.BenfordMADAcceptable & " Acceptable, < " & cfgF.BenfordMADMarginal & " Marginal, sinon Non conforme)"
+        If benfordOK Then
+            If madVal >= cfgF.BenfordMADMarginal Then
+                .Cells(rowNum, 4).Value = "NON CONFORME"
+                .Cells(rowNum, 4).Interior.Color = RGB(255, 100, 100)
+            ElseIf madVal >= cfgF.BenfordMADAcceptable Then
+                .Cells(rowNum, 4).Value = "MARGINAL"
+                .Cells(rowNum, 4).Interior.Color = RGB(255, 230, 150)
+            Else
+                .Cells(rowNum, 4).Value = "CONFORME"
+                .Cells(rowNum, 4).Interior.Color = RGB(200, 255, 200)
+            End If
+        End If
         rowNum = rowNum + 2
 
         ' Section Patterns
@@ -584,30 +656,16 @@ Public Sub GenerateForensicReport(wb As Workbook)
         .Range(.Cells(rowNum, 1), .Cells(rowNum, 4)).Interior.Color = RGB(200, 200, 200)
         rowNum = rowNum + 1
 
-        ' Liste des patterns
-        .Cells(rowNum, 1).Value = "Mots-cles suspects"
-        .Cells(rowNum, 4).Value = "CADEAU, URGENT, MANUEL, etc."
+        ' Occurrences reelles: comptage par categorie dans AUDIT_REPORT (colonne Categorie)
+        Call WritePatternRow(ws, rowNum, wsAudit, "KEYWORD", "Mots-cles suspects (FRD-001)", "CADEAU, URGENT, MANUEL, OVERRIDE...")
+        Call WritePatternRow(ws, rowNum, wsAudit, "WEEKEND", "Transactions week-end (FRD-002)", "Operations > " & Format(cfgF.WeekendThreshold, "#,##0") & " XAF samedi/dimanche")
+        Call WritePatternRow(ws, rowNum, wsAudit, "THRESHOLD", "Juste sous seuil (FRD-003)", "Montants proches des seuils LAB/FT")
+        Call WritePatternRow(ws, rowNum, wsAudit, "LAYERING", "Circularite / layering (FRD-004)", "Round-tripping, empilement de flux")
+        Call WritePatternRow(ws, rowNum, wsAudit, "STRUCTURING", "Saucissonnage (FRD-005)", "Fractionnement de transactions")
+        Call WritePatternRow(ws, rowNum, wsAudit, "DUPLICATE", "Doublons (FRD-006)", "Transactions identiques")
+        Call WritePatternRow(ws, rowNum, wsAudit, "PATTERN", "Montants ronds / repetitifs (FRD-007)", "Patterns de montants")
+        Call WritePatternRow(ws, rowNum, wsAudit, "TIMING", "Timing suspect (FRD-008)", "Fin de mois, heures atypiques")
         rowNum = rowNum + 1
-
-        .Cells(rowNum, 1).Value = "Transactions week-end"
-        .Cells(rowNum, 4).Value = "Operations > 50K samedi/dimanche"
-        rowNum = rowNum + 1
-
-        .Cells(rowNum, 1).Value = "Juste sous seuil"
-        .Cells(rowNum, 4).Value = "Montants proches des seuils LAB/FT"
-        rowNum = rowNum + 1
-
-        .Cells(rowNum, 1).Value = "Circularite"
-        .Cells(rowNum, 4).Value = "Round-tripping detecte"
-        rowNum = rowNum + 1
-
-        .Cells(rowNum, 1).Value = "Saucissonnage"
-        .Cells(rowNum, 4).Value = "Fractionnement de transactions"
-        rowNum = rowNum + 1
-
-        .Cells(rowNum, 1).Value = "Doublons"
-        .Cells(rowNum, 4).Value = "Transactions identiques"
-        rowNum = rowNum + 2
 
         ' Section Z-Score
         .Cells(rowNum, 1).Value = "3. ANOMALIES STATISTIQUES (Z-SCORE)"
@@ -615,14 +673,38 @@ Public Sub GenerateForensicReport(wb As Workbook)
         .Cells(rowNum, 1).Font.Size = 12
         rowNum = rowNum + 2
 
-        .Cells(rowNum, 1).Value = "Compte"
-        .Cells(rowNum, 2).Value = "Moyenne"
-        .Cells(rowNum, 3).Value = "Ecart-type"
+        .Cells(rowNum, 1).Value = "Ref"
+        .Cells(rowNum, 2).Value = "Compte"
+        .Cells(rowNum, 3).Value = "Niveau"
         .Cells(rowNum, 4).Value = "Montant"
-        .Cells(rowNum, 5).Value = "Z-Score"
-        .Cells(rowNum, 6).Value = "Alerte"
+        .Cells(rowNum, 5).Value = "Risque"
+        .Cells(rowNum, 6).Value = "Details (moyenne, ecart-type, n)"
         .Range(.Cells(rowNum, 1), .Cells(rowNum, 6)).Font.Bold = True
         .Range(.Cells(rowNum, 1), .Cells(rowNum, 6)).Interior.Color = RGB(200, 200, 200)
+        rowNum = rowNum + 1
+
+        ' Alertes IA-xxx (Z-Score) reelles depuis AUDIT_REPORT (max 15)
+        If Not wsAudit Is Nothing Then
+            Dim lastA As Long, ia As Long, nZ As Long
+            lastA = wsAudit.Cells(wsAudit.Rows.Count, SAFA_Common.AUDIT_COL_REF).End(xlUp).Row
+            For ia = 2 To lastA
+                If Left(SAFA_Common.SafeText(wsAudit.Cells(ia, SAFA_Common.AUDIT_COL_REF).Value), 3) = "IA-" Then
+                    .Cells(rowNum, 1).Value = wsAudit.Cells(ia, SAFA_Common.AUDIT_COL_REF).Value
+                    .Cells(rowNum, 2).Value = wsAudit.Cells(ia, SAFA_Common.AUDIT_COL_COMPTE).Value
+                    .Cells(rowNum, 2).NumberFormat = "@"
+                    .Cells(rowNum, 3).Value = wsAudit.Cells(ia, SAFA_Common.AUDIT_COL_NIVEAU).Value
+                    .Cells(rowNum, 4).Value = wsAudit.Cells(ia, SAFA_Common.AUDIT_COL_VALEUR).Value
+                    .Cells(rowNum, 4).NumberFormat = "#,##0"
+                    .Cells(rowNum, 5).Value = wsAudit.Cells(ia, SAFA_Common.AUDIT_COL_RISQUE).Value
+                    .Cells(rowNum, 6).Value = wsAudit.Cells(ia, SAFA_Common.AUDIT_COL_DESCRIPTION).Value
+                    Call ColorPriorityCell(.Cells(rowNum, 3))
+                    rowNum = rowNum + 1
+                    nZ = nZ + 1
+                    If nZ >= 15 Then Exit For
+                End If
+            Next ia
+            If nZ = 0 Then .Cells(rowNum, 1).Value = "Aucune anomalie Z-Score detectee"
+        End If
 
         .Columns("A:H").AutoFit
 
@@ -644,8 +726,14 @@ Public Sub GenerateComplianceReport(wb As Workbook)
     Dim ws As Worksheet
     Dim rowNum As Long
 
-    ' CORRIGÉ BUG-003: Utiliser GetOrCreateSheet pour éviter conflits
-    Set ws = Core_Engine.GetOrCreateSheet("COMPLIANCE_CHECK", True)
+    ' COMPLIANCE_CHECK est la feuille de resultats ecrite par Regulatory_Compliance (on la LIT, on ne l'ecrase plus).
+    ' Le rapport de synthese est ecrit dans COMPLIANCE_REPORT.
+    Dim wsCheck As Worksheet
+    On Error Resume Next
+    Set wsCheck = wb.Sheets("COMPLIANCE_CHECK")
+    On Error GoTo ErrorHandler
+
+    Set ws = PrepareReportSheet("COMPLIANCE_REPORT")
 
     rowNum = 1
 
@@ -675,20 +763,13 @@ Public Sub GenerateComplianceReport(wb As Workbook)
         .Range(.Cells(rowNum, 1), .Cells(rowNum, 5)).Interior.Color = RGB(200, 200, 200)
         rowNum = rowNum + 1
 
-        .Cells(rowNum, 1).Value = "COBAC-001"
-        .Cells(rowNum, 2).Value = "Suspens > 90 jours"
-        .Cells(rowNum, 3).Value = "90 jours"
-        rowNum = rowNum + 1
+        Dim cfgR As Config_Manager.RegulatoryConfig
+        cfgR = Config_Manager.GetRegulatoryConfig()
 
-        .Cells(rowNum, 1).Value = "COBAC-002"
-        .Cells(rowNum, 2).Value = "Transit non apure J+7"
-        .Cells(rowNum, 3).Value = "7 jours"
+        Call WriteComplianceRow(ws, rowNum, wsCheck, "COBAC-001", "Suspens > " & cfgR.CobacSuspensLimitDays & " jours", cfgR.CobacSuspensLimitDays & " jours")
+        Call WriteComplianceRow(ws, rowNum, wsCheck, "COBAC-002", "Transit non apure J+" & cfgR.CobacTransitLimitDays, cfgR.CobacTransitLimitDays & " jours")
+        Call WriteComplianceRow(ws, rowNum, wsCheck, "COBAC-003", "Couverture provisions", "> 50%")
         rowNum = rowNum + 1
-
-        .Cells(rowNum, 1).Value = "COBAC-003"
-        .Cells(rowNum, 2).Value = "Couverture provisions"
-        .Cells(rowNum, 3).Value = "> 50%"
-        rowNum = rowNum + 2
 
         ' Section OHADA
         .Cells(rowNum, 1).Value = "2. CONFORMITE OHADA/SYSCOHADA"
@@ -706,15 +787,9 @@ Public Sub GenerateComplianceReport(wb As Workbook)
         .Range(.Cells(rowNum, 1), .Cells(rowNum, 5)).Interior.Color = RGB(200, 200, 200)
         rowNum = rowNum + 1
 
-        .Cells(rowNum, 1).Value = "OHADA-001"
-        .Cells(rowNum, 2).Value = "Equilibre bilan (Actif=Passif)"
-        .Cells(rowNum, 3).Value = "Ecart < 1000"
+        Call WriteComplianceRow(ws, rowNum, wsCheck, "OHADA-001", "Equilibre bilan (Actif=Passif)", "Ecart < 1000")
+        Call WriteComplianceRow(ws, rowNum, wsCheck, "OHADA-002", "Coherence sens comptes", "Par classe")
         rowNum = rowNum + 1
-
-        .Cells(rowNum, 1).Value = "OHADA-002"
-        .Cells(rowNum, 2).Value = "Coherence sens comptes"
-        .Cells(rowNum, 3).Value = "Par classe"
-        rowNum = rowNum + 2
 
         ' Section LAB/FT
         .Cells(rowNum, 1).Value = "3. CONFORMITE LAB/FT"
@@ -732,15 +807,17 @@ Public Sub GenerateComplianceReport(wb As Workbook)
         .Range(.Cells(rowNum, 1), .Cells(rowNum, 5)).Interior.Color = RGB(200, 200, 200)
         rowNum = rowNum + 1
 
-        .Cells(rowNum, 1).Value = "LAB-001"
-        .Cells(rowNum, 2).Value = "Transactions > seuil declaration"
-        .Cells(rowNum, 3).Value = "5,000,000 XAF"
+        Call WriteComplianceRow(ws, rowNum, wsCheck, "LAB-001", "Transactions > seuil declaration", Format(cfgR.LabftDeclarationThreshold, "#,##0") & " XAF")
+        Call WriteComplianceRow(ws, rowNum, wsCheck, "LAB-002", "Detection structuration", "Cumul > " & Format(cfgR.LabftStructuringThreshold, "#,##0") & " XAF")
         rowNum = rowNum + 1
 
-        .Cells(rowNum, 1).Value = "LAB-002"
-        .Cells(rowNum, 2).Value = "Detection structuration"
-        .Cells(rowNum, 3).Value = "Pattern"
-        rowNum = rowNum + 2
+        If wsCheck Is Nothing Then
+            .Cells(rowNum, 1).Value = "Feuille COMPLIANCE_CHECK absente: executez Regulatory_Compliance.Lancer_Verification_Conformite"
+            .Cells(rowNum, 1).Font.Italic = True
+            .Cells(rowNum, 1).Font.Color = RGB(200, 0, 0)
+            rowNum = rowNum + 1
+        End If
+        rowNum = rowNum + 1
 
         ' Signature
         .Cells(rowNum, 1).Value = "Rapport genere le: " & Format(Now, "dd/mm/yyyy hh:mm:ss")
@@ -777,7 +854,8 @@ Public Sub ExportToPDF(wb As Workbook, Optional outputPath As String = "")
 
     ' Liste des feuilles a exporter
     sheetsToExport = Array("EXECUTIVE_SUMMARY", "DASHBOARD_RISQUE", "AUDIT_REPORT", _
-                          "RECONCIL", "FORENSIC_ANALYSIS", "COMPLIANCE_CHECK")
+                          "RECONCIL", "FORENSIC_REPORT", "FORENSIC_ANALYSIS", _
+                          "COMPLIANCE_REPORT", "COMPLIANCE_CHECK", "ECHANTILLON_TEST")
 
     ' Selectionner les feuilles existantes
     Dim firstSheet As Boolean
@@ -901,14 +979,17 @@ Public Sub SendCriticalAlerts(wb As Workbook, recipient As String)
     criticalCount = 0
     alertBody = "ALERTES CRITIQUES DETECTEES:" & vbNewLine & vbNewLine
 
-    ' Parcourir les alertes
+    ' Parcourir les alertes (layout canonique AUDIT_COL_*)
     For i = 2 To lastRow
-        If ws.Cells(i, 3).Value = "CRITICAL" Or ws.Cells(i, 3).Value = "FRAUD" Then
+        Dim niveau As String
+        niveau = UCase(SAFA_Common.SafeText(ws.Cells(i, SAFA_Common.AUDIT_COL_NIVEAU).Value))
+        If niveau = "CRITICAL" Or niveau = "FRAUD" Then
             criticalCount = criticalCount + 1
-            alertBody = alertBody & criticalCount & ". " & ws.Cells(i, 2).Value & vbNewLine
-            alertBody = alertBody & "   Compte: " & ws.Cells(i, 4).Value & vbNewLine
-            alertBody = alertBody & "   Description: " & ws.Cells(i, 5).Value & vbNewLine
-            alertBody = alertBody & "   Montant: " & Format(ws.Cells(i, 6).Value, "#,##0") & " XAF" & vbNewLine & vbNewLine
+            alertBody = alertBody & criticalCount & ". [" & ws.Cells(i, SAFA_Common.AUDIT_COL_REF).Value & "] " & _
+                        ws.Cells(i, SAFA_Common.AUDIT_COL_CATEGORIE).Value & " - " & ws.Cells(i, SAFA_Common.AUDIT_COL_RISQUE).Value & vbNewLine
+            alertBody = alertBody & "   Compte: " & ws.Cells(i, SAFA_Common.AUDIT_COL_COMPTE).Value & vbNewLine
+            alertBody = alertBody & "   Details: " & ws.Cells(i, SAFA_Common.AUDIT_COL_DESCRIPTION).Value & vbNewLine
+            alertBody = alertBody & "   Montant: " & Format(ws.Cells(i, SAFA_Common.AUDIT_COL_VALEUR).Value, "#,##0") & " XAF" & vbNewLine & vbNewLine
         End If
     Next i
 
@@ -943,8 +1024,7 @@ Public Sub GenerateSampleSheet(wb As Workbook)
     Dim rowNum As Long
     Dim i As Long
 
-    ' CORRIGÉ BUG-003: Utiliser GetOrCreateSheet pour éviter conflits
-    Set ws = Core_Engine.GetOrCreateSheet("ECHANTILLON_TEST", True)
+    Set ws = PrepareReportSheet("ECHANTILLON_TEST")
 
     On Error Resume Next
     Set wsReconcil = wb.Sheets("RECONCIL")
@@ -978,47 +1058,31 @@ Public Sub GenerateSampleSheet(wb As Workbook)
         .Range(.Cells(rowNum, 1), .Cells(rowNum, 10)).Interior.Color = RGB(200, 200, 200)
         rowNum = rowNum + 1
 
-        ' Copier Top 20 depuis RECONCIL trie par score
-        If Not wsReconcil Is Nothing Then
-            Dim lastRowRec As Long
-            lastRowRec = wsReconcil.Cells(wsReconcil.Rows.Count, 1).End(xlUp).Row
+        ' Top 20 reel: RECONCIL trie par Risk Score decroissant (colonnes canoniques, feuille source intacte)
+        Dim topAcc As Variant
+        If Not wsReconcil Is Nothing Then topAcc = GetTopAccountsByScore(wsReconcil, 20)
+        If IsArray(topAcc) Then
+            For i = 1 To UBound(topAcc, 1)
+                .Cells(rowNum, 1).Value = i
+                .Cells(rowNum, 2).Value = topAcc(i, 1)
+                .Cells(rowNum, 2).NumberFormat = "@"
+                .Cells(rowNum, 3).Value = topAcc(i, 2)
+                .Cells(rowNum, 4).Value = topAcc(i, 3)
+                .Cells(rowNum, 4).NumberFormat = "#,##0"
+                .Cells(rowNum, 5).Value = topAcc(i, 4)
+                .Cells(rowNum, 6).Value = topAcc(i, 5)
+                .Cells(rowNum, 7).Value = topAcc(i, 6)
+                .Cells(rowNum, 8).Value = "A INVESTIGUER"
 
-            ' Pour simplifier, copier les 20 premieres lignes avec score
-            Dim copyCount As Integer
-            copyCount = 0
-
-            For i = 2 To lastRowRec
-                If copyCount >= 20 Then Exit For
-
-                ' Verifier si la ligne a un score
-                ' CORRIGÉ BUG-005: Colonnes correctes selon structure RECONCIL
-                ' Structure: A(1)=Compte, B(2)=Libelle, C(3)=Balance, D(4)=GL, E(5)=Ecart,
-                '            F(6)=Status, G(7)=Anciennete, H(8)=NbTrans, I(9)=DateMin,
-                '            J(10)=DateMax, K(11)=Score, L(12)=Facteurs, M(13)=Provisions, N(14)=Priority
-                If wsReconcil.Cells(i, 11).Value <> "" Then ' Score non vide
-                    copyCount = copyCount + 1
-                    .Cells(rowNum, 1).Value = copyCount
-                    .Cells(rowNum, 2).Value = wsReconcil.Cells(i, 1).Value ' Compte (col A)
-                    .Cells(rowNum, 3).Value = wsReconcil.Cells(i, 2).Value ' Libelle (col B)
-                    .Cells(rowNum, 4).Value = wsReconcil.Cells(i, 5).Value ' Ecart (col E)
-                    .Cells(rowNum, 4).NumberFormat = "#,##0"
-                    .Cells(rowNum, 5).Value = wsReconcil.Cells(i, 11).Value ' Score (col K)
-                    .Cells(rowNum, 6).Value = wsReconcil.Cells(i, 14).Value ' Priority/Niveau (col N)
-                    .Cells(rowNum, 7).Value = wsReconcil.Cells(i, 12).Value ' Facteurs (col L)
-                    .Cells(rowNum, 8).Value = "A INVESTIGUER"
-
-                    ' Colorer selon niveau de priorité
-                    Select Case wsReconcil.Cells(i, 14).Value ' Priority (col N)
-                        Case "CRITICAL"
-                            .Range(.Cells(rowNum, 1), .Cells(rowNum, 10)).Interior.Color = RGB(255, 200, 200)
-                        Case "HIGH"
-                            .Range(.Cells(rowNum, 1), .Cells(rowNum, 10)).Interior.Color = RGB(255, 230, 200)
-                        Case "MEDIUM"
-                            .Range(.Cells(rowNum, 1), .Cells(rowNum, 10)).Interior.Color = RGB(255, 255, 200)
-                    End Select
-
-                    rowNum = rowNum + 1
-                End If
+                Select Case UCase(SAFA_Common.SafeText(topAcc(i, 5)))
+                    Case "CRITICAL"
+                        .Range(.Cells(rowNum, 1), .Cells(rowNum, 10)).Interior.Color = RGB(255, 200, 200)
+                    Case "HIGH"
+                        .Range(.Cells(rowNum, 1), .Cells(rowNum, 10)).Interior.Color = RGB(255, 230, 200)
+                    Case "MEDIUM"
+                        .Range(.Cells(rowNum, 1), .Cells(rowNum, 10)).Interior.Color = RGB(255, 255, 200)
+                End Select
+                rowNum = rowNum + 1
             Next i
         End If
 
@@ -1081,10 +1145,170 @@ Private Sub LogReportGeneration(reportType As String, duration As Double)
     ws.Cells(lastRow, 5).Value = "SUCCESS"
 End Sub
 
-' CORRIGÉ: Utiliser SAFA_Common.LogError pour centraliser la gestion d'erreurs
+' Gestion d'erreurs centralisee (SAFA_Common)
 Private Sub LogError(moduleName As String, procName As String, errNum As Long, errDesc As String)
     On Error Resume Next
     Call SAFA_Common.LogError(moduleName, procName, errNum, errDesc)
+End Sub
+
+'===============================================================================
+' FONCTION: PrepareReportSheet
+' Description: Recupere ou cree une feuille de rapport et la vide proprement
+'              (supprime TCD et graphiques avant Clear, sinon erreur 1004)
+'===============================================================================
+Private Function PrepareReportSheet(sheetName As String) As Worksheet
+    Dim ws As Worksheet
+    Dim pt As Object, co As Object
+
+    Set ws = Core_Engine.GetOrCreateSheet(sheetName, False)
+
+    On Error Resume Next
+    For Each pt In ws.PivotTables
+        pt.TableRange2.Clear
+    Next pt
+    For Each co In ws.ChartObjects
+        co.Delete
+    Next co
+    ws.Cells.Clear
+    ws.Cells.FormatConditions.Delete
+    On Error GoTo 0
+
+    Set PrepareReportSheet = ws
+End Function
+
+'===============================================================================
+' FONCTION: GetTopAccountsByScore
+' Description: Retourne les N comptes au Risk Score le plus eleve, SANS trier
+'              la feuille RECONCIL (lecture en memoire). Selection partielle O(n*N).
+' Retour: tableau (1..N, 1..6) = Compte, Libelle, Ecart, Score, Priority, Facteurs
+'         ou Empty si aucune donnee
+'===============================================================================
+Private Function GetTopAccountsByScore(wsReconcil As Worksheet, topN As Long) As Variant
+    Dim lastRow As Long, n As Long, i As Long, k As Long
+    Dim data As Variant, used() As Boolean
+    Dim bestIdx As Long, bestScore As Double, sc As Double
+    Dim result() As Variant
+
+    lastRow = wsReconcil.Cells(wsReconcil.Rows.Count, SAFA_Common.RECONCIL_COL_COMPTE).End(xlUp).Row
+    If lastRow < 2 Then Exit Function
+
+    data = wsReconcil.Range(wsReconcil.Cells(2, 1), wsReconcil.Cells(lastRow, SAFA_Common.RECONCIL_COL_PRIORITY)).Value
+    n = UBound(data, 1)
+    If topN > n Then topN = n
+    If topN < 1 Then Exit Function
+
+    ReDim used(1 To n)
+    ReDim result(1 To topN, 1 To 6)
+
+    For k = 1 To topN
+        bestIdx = 0: bestScore = -1
+        For i = 1 To n
+            If Not used(i) Then
+                sc = SAFA_Common.SafeVal(data(i, SAFA_Common.RECONCIL_COL_SCORE))
+                If sc > bestScore Then
+                    bestScore = sc
+                    bestIdx = i
+                End If
+            End If
+        Next i
+        If bestIdx = 0 Then Exit For
+        used(bestIdx) = True
+        result(k, 1) = SAFA_Common.SafeText(data(bestIdx, SAFA_Common.RECONCIL_COL_COMPTE))
+        result(k, 2) = SAFA_Common.SafeText(data(bestIdx, SAFA_Common.RECONCIL_COL_LIBELLE))
+        result(k, 3) = SAFA_Common.SafeVal(data(bestIdx, SAFA_Common.RECONCIL_COL_ECART))
+        result(k, 4) = bestScore
+        result(k, 5) = SAFA_Common.SafeText(data(bestIdx, SAFA_Common.RECONCIL_COL_PRIORITY))
+        result(k, 6) = SAFA_Common.SafeText(data(bestIdx, SAFA_Common.RECONCIL_COL_FACTEURS))
+    Next k
+
+    GetTopAccountsByScore = result
+End Function
+
+'===============================================================================
+' PROCEDURE: ColorPriorityCell - couleur standard selon niveau
+'===============================================================================
+Private Sub ColorPriorityCell(cell As Range)
+    Select Case UCase(SAFA_Common.SafeText(cell.Value))
+        Case "CRITICAL", "FRAUD"
+            cell.Interior.Color = RGB(255, 0, 0): cell.Font.Color = vbWhite
+        Case "HIGH", "MAJOR"
+            cell.Interior.Color = RGB(255, 165, 0)
+        Case "MEDIUM"
+            cell.Interior.Color = RGB(255, 255, 0)
+        Case "LOW"
+            cell.Interior.Color = RGB(200, 255, 200)
+    End Select
+End Sub
+
+'===============================================================================
+' PROCEDURE: WritePatternRow - ligne du tableau "patterns detectes" avec
+'            comptage reel dans AUDIT_REPORT (colonne Categorie)
+'===============================================================================
+Private Sub WritePatternRow(ws As Worksheet, ByRef rowNum As Long, wsAudit As Worksheet, _
+                            category As String, label As String, description As String)
+    Dim cnt As Long, risk As String
+    cnt = 0
+    If Not wsAudit Is Nothing Then
+        On Error Resume Next
+        cnt = Application.WorksheetFunction.CountIf(wsAudit.Columns(SAFA_Common.AUDIT_COL_CATEGORIE), category)
+        On Error GoTo 0
+    End If
+    If cnt = 0 Then
+        risk = "-"
+    ElseIf cnt >= 10 Then
+        risk = "ELEVE"
+    ElseIf cnt >= 3 Then
+        risk = "MOYEN"
+    Else
+        risk = "FAIBLE"
+    End If
+    ws.Cells(rowNum, 1).Value = label
+    ws.Cells(rowNum, 2).Value = cnt
+    ws.Cells(rowNum, 3).Value = risk
+    ws.Cells(rowNum, 4).Value = description
+    If risk = "ELEVE" Then ws.Cells(rowNum, 3).Interior.Color = RGB(255, 150, 150)
+    If risk = "MOYEN" Then ws.Cells(rowNum, 3).Interior.Color = RGB(255, 230, 150)
+    rowNum = rowNum + 1
+End Sub
+
+'===============================================================================
+' PROCEDURE: WriteComplianceRow - ligne de regle avec resultat reel lu dans
+'            COMPLIANCE_CHECK (colonnes canoniques COMPLIANCE_COL_*)
+'===============================================================================
+Private Sub WriteComplianceRow(ws As Worksheet, ByRef rowNum As Long, wsCheck As Worksheet, _
+                               ruleId As String, label As String, seuil As String)
+    Dim lastRow As Long, i As Long
+    Dim statut As String, details As String
+
+    statut = "Non execute": details = ""
+    If Not wsCheck Is Nothing Then
+        lastRow = wsCheck.Cells(wsCheck.Rows.Count, SAFA_Common.COMPLIANCE_COL_ID).End(xlUp).Row
+        For i = 2 To lastRow
+            If UCase(SAFA_Common.SafeText(wsCheck.Cells(i, SAFA_Common.COMPLIANCE_COL_ID).Value)) = UCase(ruleId) Then
+                statut = SAFA_Common.SafeText(wsCheck.Cells(i, SAFA_Common.COMPLIANCE_COL_STATUT).Value)
+                details = SAFA_Common.SafeText(wsCheck.Cells(i, SAFA_Common.COMPLIANCE_COL_DETAILS).Value, 200)
+                Exit For
+            End If
+        Next i
+    End If
+
+    ws.Cells(rowNum, 1).Value = ruleId
+    ws.Cells(rowNum, 2).Value = label
+    ws.Cells(rowNum, 3).Value = seuil
+    ws.Cells(rowNum, 4).Value = details
+    ws.Cells(rowNum, 5).Value = statut
+
+    Select Case UCase(statut)
+        Case "CONFORME", "OK", "PASS"
+            ws.Cells(rowNum, 5).Interior.Color = RGB(200, 255, 200)
+        Case "NON CONFORME", "FAIL", "KO", "CRITICAL"
+            ws.Cells(rowNum, 5).Interior.Color = RGB(255, 150, 150)
+        Case "ATTENTION", "WARNING", "A VERIFIER"
+            ws.Cells(rowNum, 5).Interior.Color = RGB(255, 230, 150)
+        Case "NON EXECUTE"
+            ws.Cells(rowNum, 5).Font.Italic = True
+    End Select
+    rowNum = rowNum + 1
 End Sub
 
 '===============================================================================
