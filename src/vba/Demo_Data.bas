@@ -223,6 +223,7 @@ Private Function WriteTransactions(ByRef arr() As Variant, ByRef r As Long, n As
             ' SUSPENS: items anciens (> 90 j) + quelques recents
             For i = 1 To 6
                 age = 95 + Int(Rnd * 305)
+                If n = 1 And i = 1 Then age = 400   ' garantit Age Max > 365 j -> score CRITICAL sur le compte 1
                 amt = Sgn(Rnd - 0.5) * RandAmount(200000, 3000000)
                 total = total + AddTx(arr, r, age, "SUSPENS A REGULARISER REF " & Format(1000 + i * n, "0000"), amt, txTotal)
             Next i
