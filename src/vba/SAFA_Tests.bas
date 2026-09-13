@@ -173,9 +173,11 @@ Private Sub RunAuditTrailCheck()
     Err.Clear
     res = Application.Run("Security_Module.VerifyAuditTrailIntegrity")
     If Err.Number <> 0 Then
-        Call Record("Journal d'audit: integrite de la chaine", "True", "Non verifiable (" & Err.Description & ")", False)
+        Call Record("Journal d'audit: integrite (chaine + hash)", "Valide", "Non verifiable (" & Err.Description & ")", False)
     Else
-        Call Record("Journal d'audit: integrite de la chaine", "True", CStr(res), CBool(res))
+        Dim detail As String
+        detail = Application.Run("Security_Module.LastIntegrityReport")
+        Call Record("Journal d'audit: integrite (chaine + hash)", "Valide", IIf(detail = "", CStr(res), detail), CBool(res))
     End If
     On Error GoTo 0
 End Sub
