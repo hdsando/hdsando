@@ -477,10 +477,11 @@ Public Sub WriteAuditLog(logType As String, action As String, Optional details A
     If wsLog Is Nothing Then
         Set wsLog = ThisWorkbook.Sheets.Add
         wsLog.Name = "AUDIT_TRAIL"
-        wsLog.Range("A1:G1").Value = Array("Timestamp", "Type", "User", "Action", "Details", "Hash", "PrevHash")
-        FormatHeader wsLog.Range("A1:G1")
+        wsLog.Range("A1:H1").Value = Array("Timestamp", "Type", "User", "Action", "Details", "Hash", "PrevHash", "Algo")
+        FormatHeader wsLog.Range("A1:H1")
         wsLog.Visible = xlSheetVeryHidden
     End If
+    If SafeText(wsLog.Cells(1, 8).Value) = "" Then wsLog.Cells(1, 8).Value = "Algo"
     On Error GoTo 0
 
     nextRow = wsLog.Cells(wsLog.Rows.Count, 1).End(xlUp).Row + 1
@@ -492,21 +493,28 @@ Public Sub WriteAuditLog(logType As String, action As String, Optional details A
         previousHash = "GENESIS"
     End If
 
-    ' Construire les données du log
-    logData = Format(Now, "yyyy-mm-dd hh:nn:ss.000") & "|" & _
-              logType & "|" & username & "|" & action & "|" & details & "|" & previousHash
+    ' Les valeurs hashees sont EXACTEMENT celles ecrites (horodatage unique, textes tronques),
+    ' sinon la verification (Security_Module.VerifyAuditTrailIntegrity) ne peut pas recalculer le hash.
+    Dim ts As String, actionW As String, detailsW As String
+    ts = Format(Now, "yyyy-mm-dd hh:nn:ss")
+    actionW = Left(action, 500)
+    detailsW = Left(details, 1000)
 
-    ' Calculer le hash chainé
+    logData = ts & "|" & logType & "|" & username & "|" & actionW & "|" & detailsW & "|" & previousHash
+
+    ' Hash chaine (SHA-256 si .NET disponible, sinon legacy) + algorithme enregistre
     currentHash = ComputeHash(logData)
 
-    ' Écrire l'entrée
-    wsLog.Cells(nextRow, 1).Value = Format(Now, "yyyy-mm-dd hh:nn:ss.000")
+    ' Écrire l'entrée (en texte pour que la relecture soit identique a l'ecriture)
+    wsLog.Cells(nextRow, 1).NumberFormat = "@"
+    wsLog.Cells(nextRow, 1).Value = ts
     wsLog.Cells(nextRow, 2).Value = logType
     wsLog.Cells(nextRow, 3).Value = username
-    wsLog.Cells(nextRow, 4).Value = Left(action, 500)
-    wsLog.Cells(nextRow, 5).Value = Left(details, 1000)
+    wsLog.Cells(nextRow, 4).Value = actionW
+    wsLog.Cells(nextRow, 5).Value = detailsW
     wsLog.Cells(nextRow, 6).Value = currentHash
     wsLog.Cells(nextRow, 7).Value = previousHash
+    wsLog.Cells(nextRow, 8).Value = Crypto_Provider.ProviderName()
 End Sub
 
 Public Sub LogError(moduleName As String, procName As String, errNumber As Long, errDescription As String, Optional severity As String = "ERROR")

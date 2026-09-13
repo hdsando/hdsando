@@ -44,7 +44,21 @@ Public Function IsAvailable() As Boolean
 End Function
 
 Public Function ProviderName() As String
-    ProviderName = IIf(IsAvailable(), "dotnet", "legacy")
+    ' Nom de l'algorithme de hash effectivement utilise (enregistre dans AUDIT_TRAIL col. H)
+    ProviderName = IIf(IsAvailable(), "sha256", "legacy")
+End Function
+
+Public Function HashHexWith(algo As String, text As String) As String
+    ' Recalcule un hash avec un algorithme donne (pour verifier un journal ecrit ailleurs).
+    ' Renvoie "" si l'algorithme demande n'est pas disponible sur ce poste.
+    Select Case LCase(Trim(algo))
+        Case "sha256"
+            If IsAvailable() Then HashHexWith = Sha256Hex(text) Else HashHexWith = ""
+        Case "legacy"
+            HashHexWith = Legacy_Hash(text)
+        Case Else
+            HashHexWith = ""
+    End Select
 End Function
 
 ' ==============================================================================

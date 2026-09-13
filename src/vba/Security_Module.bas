@@ -1,6 +1,8 @@
 Attribute VB_Name = "Security_Module"
 Option Explicit
 
+Private mLastIntegrityReport As String   ' detail de la derniere verification du journal
+
 ' ==============================================================================
 ' S.A.F.A - SYSTEM FOR AUTOMATED FINANCIAL AUDIT
 ' MODULE: SECURITY_MODULE v10.0
@@ -224,72 +226,76 @@ Public Sub WriteSecurityLog(logType As String, username As String, details As St
 End Sub
 
 Public Function VerifyAuditTrailIntegrity() As Boolean
-    ' Vérifier l'intégrité COMPLÈTE de la chaîne de hash
-    ' CORRIGÉ: Vérifie maintenant aussi le hash de la ligne courante
+    ' Verification COMPLETE du journal d'audit:
+    '   1. chainage: PrevHash(i) = Hash(i-1)  (GENESIS pour la premiere ligne)
+    '   2. hash: Hash(i) = H(Timestamp|Type|User|Action|Details|PrevHash) avec l'algorithme
+    '      enregistre en colonne H ("sha256" ou "legacy"); si l'algorithme n'est pas
+    '      disponible sur ce poste, la ligne est comptee "non verifiable" (chainage seul).
+    ' Ne montre aucune boite de dialogue: les appelants decident de l'affichage.
+    ' Le detail est disponible via LastIntegrityReport.
     Dim wsLog As Worksheet
     Dim i As Long, lr As Long
-    Dim expectedHash As String, actualHash As String
+    Dim expectedHash As String, actualHash As String, algo As String
     Dim logData As String, prevHash As String, storedPrevHash As String
-    Dim tamperedRows As String
+    Dim tamperedRows As String, unverifiable As Long
     Dim isValid As Boolean
-    Dim hashMismatch As Boolean, chainMismatch As Boolean
 
     On Error Resume Next
     Set wsLog = ThisWorkbook.Sheets("AUDIT_TRAIL")
+    On Error GoTo 0
     If wsLog Is Nothing Then
+        mLastIntegrityReport = "Journal absent"
         VerifyAuditTrailIntegrity = True
         Exit Function
     End If
-    On Error GoTo 0
 
     lr = wsLog.Cells(wsLog.Rows.Count, 1).End(xlUp).Row
     isValid = True
-    tamperedRows = ""
 
     For i = 2 To lr
-        hashMismatch = False
-        chainMismatch = False
-
-        ' Déterminer le hash précédent attendu
         If i = 2 Then
             prevHash = "GENESIS"
         Else
             prevHash = SAFA_Common.SafeText(wsLog.Cells(i - 1, 6).Value)
         End If
 
-        ' Vérifier que le champ PrevHash correspond
         storedPrevHash = SAFA_Common.SafeText(wsLog.Cells(i, 7).Value)
-        If storedPrevHash <> prevHash Then
-            chainMismatch = True
-        End If
+        actualHash = SAFA_Common.SafeText(wsLog.Cells(i, 6).Value)
+        algo = LCase(SAFA_Common.SafeText(wsLog.Cells(i, 8).Value))
 
-        ' Reconstruire les données et recalculer le hash
         logData = SAFA_Common.SafeText(wsLog.Cells(i, 1).Value) & "|" & _
                   SAFA_Common.SafeText(wsLog.Cells(i, 2).Value) & "|" & _
                   SAFA_Common.SafeText(wsLog.Cells(i, 3).Value) & "|" & _
                   SAFA_Common.SafeText(wsLog.Cells(i, 4).Value) & "|" & _
                   SAFA_Common.SafeText(wsLog.Cells(i, 5).Value) & "|" & prevHash
 
-        expectedHash = SAFA_Common.ComputeHash(logData)
-        actualHash = SAFA_Common.SafeText(wsLog.Cells(i, 6).Value)
-
-        ' Note: On ne compare plus le hash recalculé car le format a pu changer
-        ' On vérifie seulement la chaîne de liaison entre les entrées
-        If chainMismatch Then
+        If storedPrevHash <> prevHash Then
             isValid = False
-            tamperedRows = tamperedRows & i & ","
+            tamperedRows = tamperedRows & i & "(chaine),"
+        Else
+            expectedHash = Crypto_Provider.HashHexWith(algo, logData)
+            If expectedHash = "" Then
+                unverifiable = unverifiable + 1
+            ElseIf expectedHash <> actualHash Then
+                isValid = False
+                tamperedRows = tamperedRows & i & "(hash),"
+            End If
         End If
     Next i
 
+    If Len(tamperedRows) > 0 Then tamperedRows = Left(tamperedRows, Len(tamperedRows) - 1)
+    mLastIntegrityReport = (lr - 1) & " entrees, " & unverifiable & " non verifiable(s)" & _
+                           IIf(isValid, ", chaine et hash valides", ", lignes suspectes: " & tamperedRows)
+
     If Not isValid Then
-        Call WriteSecurityLog("INTEGRITY_VIOLATION", Environ("USERNAME"), _
-                              "Lignes suspectes: " & Left(tamperedRows, Len(tamperedRows) - 1))
-        MsgBox "ALERTE: Intégrité de l'audit trail compromise!" & vbCrLf & _
-               "Lignes affectées: " & Left(tamperedRows, Len(tamperedRows) - 1), _
-               vbCritical, "Violation de Sécurité"
+        Call WriteSecurityLog("INTEGRITY_VIOLATION", Environ("USERNAME"), "Lignes suspectes: " & tamperedRows)
     End If
 
     VerifyAuditTrailIntegrity = isValid
+End Function
+
+Public Function LastIntegrityReport() As String
+    LastIntegrityReport = mLastIntegrityReport
 End Function
 
 Public Sub ExportAuditTrail(filePath As String)

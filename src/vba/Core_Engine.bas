@@ -275,31 +275,12 @@ Public Sub LogError(moduleName As String, procName As String, errNumber As Long,
 End Sub
 
 Public Sub WriteToAuditLog(logType As String, message As String, Optional details As String = "")
-    ' Écriture dans l'audit trail
-    Dim wsLog As Worksheet
-    Dim nextRow As Long
-
+    ' Ecriture dans le journal d'audit: UN SEUL ecrivain (SAFA_Common.WriteAuditLog), format chaine
+    ' Timestamp | Type | User | Action | Details | Hash | PrevHash | Algo
+    ' (l'ancienne implementation ecrivait un format non chaine dans la meme feuille,
+    '  ce qui rendait la verification d'integrite impossible)
     On Error Resume Next
-    Set wsLog = ThisWorkbook.Sheets("AUDIT_TRAIL")
-
-    If wsLog Is Nothing Then
-        Set wsLog = ThisWorkbook.Sheets.Add
-        wsLog.name = "AUDIT_TRAIL"
-        wsLog.Range("A1:F1").Value = Array("Timestamp", "Type", "User", "Message", "Details", "Hash")
-        wsLog.Range("A1:F1").Font.Bold = True
-        wsLog.Visible = xlSheetVeryHidden
-    End If
-
-    nextRow = wsLog.Cells(wsLog.Rows.count, 1).End(xlUp).Row + 1
-
-    wsLog.Cells(nextRow, 1).Value = Format(Now, "yyyy-mm-dd hh:nn:ss.000")
-    wsLog.Cells(nextRow, 2).Value = logType
-    wsLog.Cells(nextRow, 3).Value = Environ("USERNAME")
-    wsLog.Cells(nextRow, 4).Value = Left(message, 500)
-    wsLog.Cells(nextRow, 5).Value = Left(details, 1000)
-    wsLog.Cells(nextRow, 6).Value = SimpleHash(CStr(nextRow) & logType & message)
-
-    On Error GoTo 0
+    Call SAFA_Common.WriteAuditLog(logType, message, details)
 End Sub
 
 Private Function SimpleHash(text As String) As String
