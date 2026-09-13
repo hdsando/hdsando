@@ -209,7 +209,8 @@ Public Function ExecuterTraitementBatch(Optional configPath As String = "") As B
 
         If SAFA_Common.FeuilleExiste("AUDIT_REPORT") Then
             On Error Resume Next
-            criticalCount = Application.WorksheetFunction.CountIf(wsAudit.Columns("C"), "CRITICAL")
+            criticalCount = Application.WorksheetFunction.CountIf(wsAudit.Columns(SAFA_Common.AUDIT_COL_NIVEAU), "CRITICAL") _
+                          + Application.WorksheetFunction.CountIf(wsAudit.Columns(SAFA_Common.AUDIT_COL_NIVEAU), "FRAUD")
             On Error GoTo BatchError
         End If
 

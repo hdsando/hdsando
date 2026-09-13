@@ -15,11 +15,29 @@ Option Explicit
 ' ==============================================================================
 
 ' --- CONSTANTES RÉGLEMENTAIRES ---
-Private Const COBAC_SUSPENS_LIMIT_DAYS As Long = 90
-Private Const COBAC_TRANSIT_LIMIT_DAYS As Long = 7
-Private Const BEAC_RESERVE_RATIO As Double = 0.07  ' 7% réserves obligatoires
-Private Const LAB_THRESHOLD_XAF As Double = 5000000  ' Seuil déclaration LAB
-Private Const LARGE_EXPOSURE_RATIO As Double = 0.25  ' 25% des fonds propres
+' Seuils charges depuis Config_Manager par LoadRegulatoryConfig (defauts entre parentheses)
+Private COBAC_SUSPENS_LIMIT_DAYS As Long     ' (90)
+Private COBAC_TRANSIT_LIMIT_DAYS As Long     ' (7)
+Private BEAC_RESERVE_RATIO As Double         ' (0.07) reserves obligatoires
+Private LAB_THRESHOLD_XAF As Double          ' (5 000 000) seuil declaration LAB
+Private LARGE_EXPOSURE_RATIO As Double       ' (0.25) des fonds propres
+
+Private Sub LoadRegulatoryConfig()
+    Dim cfg As Config_Manager.RegulatoryConfig
+    On Error Resume Next
+    cfg = Config_Manager.GetRegulatoryConfig()
+    On Error GoTo 0
+    COBAC_SUSPENS_LIMIT_DAYS = cfg.CobacSuspensLimitDays
+    COBAC_TRANSIT_LIMIT_DAYS = cfg.CobacTransitLimitDays
+    BEAC_RESERVE_RATIO = cfg.BeacReserveRatio
+    LAB_THRESHOLD_XAF = cfg.LabftDeclarationThreshold
+    LARGE_EXPOSURE_RATIO = cfg.PrudentialLargeExposureRatio
+    If COBAC_SUSPENS_LIMIT_DAYS <= 0 Then COBAC_SUSPENS_LIMIT_DAYS = 90
+    If COBAC_TRANSIT_LIMIT_DAYS <= 0 Then COBAC_TRANSIT_LIMIT_DAYS = 7
+    If BEAC_RESERVE_RATIO <= 0 Then BEAC_RESERVE_RATIO = 0.07
+    If LAB_THRESHOLD_XAF <= 0 Then LAB_THRESHOLD_XAF = 5000000
+    If LARGE_EXPOSURE_RATIO <= 0 Then LARGE_EXPOSURE_RATIO = 0.25
+End Sub
 
 ' --- TYPES ---
 Private Type ComplianceCheck
@@ -41,6 +59,7 @@ Public Sub Lancer_Verification_Conformite()
     Dim checkRow As Long
 
     On Error GoTo CompError
+    Call LoadRegulatoryConfig
 
     ' Créer feuille de conformité
     Set wsComp = Core_Engine.GetOrCreateSheet("COMPLIANCE_CHECK", True)
@@ -594,10 +613,6 @@ End Sub
 ' ==============================================================================
 
 Private Sub FormatComplianceHeader(rng As Range)
-    With rng
-        .Font.Bold = True
-        .Interior.Color = RGB(0, 51, 102)
-        .Font.Color = vbWhite
-        .HorizontalAlignment = xlCenter
-    End With
+    ' Delegue a SAFA_Common (implementation unique)
+    SAFA_Common.FormatHeader rng
 End Sub

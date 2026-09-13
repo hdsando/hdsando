@@ -16,11 +16,39 @@ Option Explicit
 ' ==============================================================================
 
 ' --- CONSTANTES ---
-Private Const BENFORD_THRESHOLD As Double = 0.15
-Private Const WEEKEND_AMOUNT_THRESHOLD As Double = 50000
+' Seuils charges depuis Config_Manager (settings.json / CONFIG_DATA) par LoadForensicConfig;
+' les valeurs entre parentheses sont les defauts si la configuration est absente.
+Private BENFORD_THRESHOLD As Double            ' (0.15) ecart relatif par chiffre
+Private WEEKEND_AMOUNT_THRESHOLD As Double     ' (50 000 XAF)
 Private Const ROUND_NUMBER_THRESHOLD As Double = 100000
-Private Const SPLIT_DETECTION_THRESHOLD As Double = 50000
-Private Const LAYERING_MIN_COUNT As Integer = 4
+Private SPLIT_DETECTION_THRESHOLD As Double    ' (50 000 XAF)
+Private LAYERING_MIN_COUNT As Integer          ' (4)
+Private BENFORD_CHI_CRITICAL As Double         ' (15.51)
+Private BENFORD_MAD_EXCELLENT As Double        ' (0.006)
+Private BENFORD_MAD_ACCEPTABLE As Double       ' (0.012)
+Private BENFORD_MAD_MARGINAL As Double         ' (0.015)
+
+Private Sub LoadForensicConfig()
+    Dim cfg As Config_Manager.ForensicConfig
+    On Error Resume Next
+    cfg = Config_Manager.GetForensicConfig()
+    On Error GoTo 0
+    WEEKEND_AMOUNT_THRESHOLD = cfg.WeekendThreshold
+    SPLIT_DETECTION_THRESHOLD = cfg.StructuringThreshold
+    LAYERING_MIN_COUNT = cfg.LayeringMinCount
+    BENFORD_CHI_CRITICAL = cfg.BenfordChiSquaredCritical
+    BENFORD_MAD_EXCELLENT = cfg.BenfordMADExcellent
+    BENFORD_MAD_ACCEPTABLE = cfg.BenfordMADAcceptable
+    BENFORD_MAD_MARGINAL = cfg.BenfordMADMarginal
+    If WEEKEND_AMOUNT_THRESHOLD <= 0 Then WEEKEND_AMOUNT_THRESHOLD = 50000
+    If SPLIT_DETECTION_THRESHOLD <= 0 Then SPLIT_DETECTION_THRESHOLD = 50000
+    If LAYERING_MIN_COUNT <= 0 Then LAYERING_MIN_COUNT = 4
+    If BENFORD_CHI_CRITICAL <= 0 Then BENFORD_CHI_CRITICAL = 15.51
+    If BENFORD_MAD_EXCELLENT <= 0 Then BENFORD_MAD_EXCELLENT = 0.006
+    If BENFORD_MAD_ACCEPTABLE <= 0 Then BENFORD_MAD_ACCEPTABLE = 0.012
+    If BENFORD_MAD_MARGINAL <= 0 Then BENFORD_MAD_MARGINAL = 0.015
+    BENFORD_THRESHOLD = 0.15
+End Sub
 
 ' --- TYPES ---
 Private Type ForensicAlert
@@ -459,6 +487,7 @@ Public Sub Lancer_Analyses_Forensic()
     Dim dictSequence As Object, dictEndMonth As Object
 
     On Error GoTo ForensicError
+    Call LoadForensicConfig
 
     If Not Core_Engine.FeuilleExiste("TRANSACTION_DATA") Or Not Core_Engine.FeuilleExiste("AUDIT_REPORT") Then
         Exit Sub
@@ -687,6 +716,7 @@ Public Sub Lancer_Benford_Enhanced()
     Dim outputArray(1 To 12, 1 To 7) As Variant
 
     On Error GoTo BenfordError
+    Call LoadForensicConfig
 
     ' Initialisation des fréquences Benford théoriques
     benford(1) = 0.301: benford(2) = 0.176: benford(3) = 0.125
@@ -748,18 +778,18 @@ Public Sub Lancer_Benford_Enhanced()
     wsOut.Range("A1").Font.Bold = True
 
     wsOut.Range("A3").Value = "Nombre d'observations: " & total
-    wsOut.Range("A4").Value = "Chi-squared: " & Format(chiSquared, "0.00") & " (Seuil critique 5%: 15.51)"
+    wsOut.Range("A4").Value = "Chi-squared: " & Format(chiSquared, "0.00") & " (Seuil critique 5%: " & BENFORD_CHI_CRITICAL & ")"
     wsOut.Range("A5").Value = "MAD (Mean Absolute Deviation): " & Format(MAD, "0.0000")
 
     ' Interprétation MAD
     Dim madInterpret As String
-    If MAD < 0.006 Then
+    If MAD < BENFORD_MAD_EXCELLENT Then
         madInterpret = "Conformité EXCELLENTE"
         wsOut.Range("A5").Interior.Color = RGB(200, 255, 200)
-    ElseIf MAD < 0.012 Then
+    ElseIf MAD < BENFORD_MAD_ACCEPTABLE Then
         madInterpret = "Conformité ACCEPTABLE"
         wsOut.Range("A5").Interior.Color = RGB(255, 255, 200)
-    ElseIf MAD < 0.015 Then
+    ElseIf MAD < BENFORD_MAD_MARGINAL Then
         madInterpret = "Conformité MARGINALE - Investigation recommandée"
         wsOut.Range("A5").Interior.Color = RGB(255, 230, 200)
     Else
@@ -806,7 +836,7 @@ Public Sub Lancer_Benford_Enhanced()
     Call CreateBenfordChart(wsOut, total)
 
     ' Résultat global dans AUDIT_REPORT
-    If MAD >= 0.015 Then
+    If MAD >= BENFORD_MAD_MARGINAL Then
         Dim wsA As Worksheet
         Set wsA = ThisWorkbook.Worksheets("AUDIT_REPORT")
         Dim nextRow As Long
