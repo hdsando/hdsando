@@ -44,6 +44,10 @@ Option Explicit
 '   CASH_DIFF    compte 46    : ecart ATM non reconcilie > 180 j                 (GLM-009)
 '   CASH_LIMIT   compte 47    : caisse au-dela de la limite de 5 000 000         (GLM-010)
 '   SENSE        compte 48    : compte de banque (actif) a solde crediteur       (GLM-003)
+'   MGR_CHEQUE   compte 49    : cheques de direction en circulation > 180 j       (GLM-013)
+'   WIP          compte 50    : travaux en cours anciens non capitalises          (GLM-017)
+'   PARKED_EXPENSE compte 51  : loyer stocke dans un compte de suspens            (GLM-018)
+'   BIG_EXPENSE  compte 52    : depense >= 5 M + remboursement perte fraude       (GLM-015, GLM-016)
 '   BENFORD      25% des soldes commencent par 8 ou 9                   (BEN-001)
 ' ==============================================================================
 
@@ -80,6 +84,10 @@ Public Function DemoAccounts(kind As String) As Variant
         Case "CASH_DIFF":     idx = Array(46)
         Case "CASH_LIMIT":    idx = Array(47)
         Case "SENSE":         idx = Array(48)
+        Case "MGR_CHEQUE":    idx = Array(49)
+        Case "WIP":           idx = Array(50)
+        Case "PARKED_EXPENSE": idx = Array(51)
+        Case "BIG_EXPENSE":   idx = Array(52)
         Case Else:            idx = Array(0)
     End Select
 
@@ -144,6 +152,10 @@ Public Sub GenerateDemoData(Optional nbComptes As Long = 300, Optional nbEcritur
     closing(46) = 950000: glBal(46) = closing(46)           ' ecart ATM non regularise
     closing(47) = 8500000: glBal(47) = closing(47)          ' caisse au-dela de la limite
     closing(48) = -Abs(closing(48)): glBal(48) = closing(48) ' compte de banque (actif) crediteur
+    closing(49) = -3500000: glBal(49) = closing(49)          ' cheques de direction (passif) anciens
+    closing(50) = 15000000: glBal(50) = closing(50)          ' WIP ancien
+    closing(51) = 900000: glBal(51) = closing(51)            ' suspens avec charge stockee
+    closing(52) = Abs(closing(52)): glBal(52) = closing(52)  ' charges (debit positif)
 
     ' Ecarts injectes (comptes 1..15)
     glBal(1) = closing(1) + 12000000
@@ -252,7 +264,7 @@ Private Function WriteTransactions(ByRef arr() As Variant, ByRef r As Long, n As
                 total = total + AddTx(arr, r, age, "SUSPENS A REGULARISER REF " & Format(1000 + i * n, "0000"), amt, txTotal)
             Next i
             For i = 1 To 4
-                total = total + AddTx(arr, r, 1 + Int(Rnd * 30), RandNarration(), Sgn(Rnd - 0.5) * RandAmount(20000, 500000), txTotal)
+                total = total + AddTx(arr, r, 1 + Int(Rnd * 30), "VIREMENT RECU EN ATTENTE D IDENTIFICATION " & Format(i, "00"), Sgn(Rnd - 0.5) * RandAmount(20000, 500000), txTotal)
             Next i
 
         Case 4, 5
@@ -339,6 +351,27 @@ Private Function WriteTransactions(ByRef arr() As Variant, ByRef r As Long, n As
 
         Case 47, 48
             total = total + NormalActivity(arr, r, 5, txTotal)
+
+        Case 49
+            ' Cheques de direction emis il y a plus de 180 jours, toujours en circulation
+            For i = 1 To 3
+                total = total + AddTx(arr, r, 200 + i * 60, "CHEQUE DE DIRECTION N " & Format(4000 + i, "0000"), -RandAmount(500000, 1500000), txTotal)
+            Next i
+
+        Case 50
+            ' WIP: dernier mouvement il y a 250 jours, jamais capitalise
+            total = total + AddTx(arr, r, 250, "AMENAGEMENT AGENCE PHASE 1 DEVIS 2025-17", 9000000, txTotal)
+            total = total + AddTx(arr, r, 300, "AMENAGEMENT AGENCE ACOMPTE ENTREPRENEUR", 6000000, txTotal)
+
+        Case 51
+            ' Charge stockee dans un compte de suspens (interdit)
+            total = total + AddTx(arr, r, 5, "LOYER AGENCE SEPTEMBRE EN ATTENTE D IMPUTATION", 900000, txTotal)
+
+        Case 52
+            ' Depense significative + remboursement de perte liee a une fraude
+            total = total + AddTx(arr, r, 6, "ACHAT MOBILIER BUREAU DIRECTION", -12000000, txTotal)
+            total = total + AddTx(arr, r, 9, "REMBOURSEMENT PERTE FRAUDE GAB 03", -2500000, txTotal)
+            total = total + NormalActivity(arr, r, 4, txTotal, -1)
 
         Case Else
             cnt = 3 + Int(avgTx * (0.5 + Rnd))
@@ -464,7 +497,11 @@ Private Function PrefixFor(n As Long) As String
         Case 46: PrefixFor = "571"   ' ecart caisse / ATM
         Case 47: PrefixFor = "571"   ' caisse au-dela de la limite
         Case 48: PrefixFor = "521"   ' banque a solde crediteur (sens anormal)
-        Case Else: PrefixFor = Choose(((n - 49) Mod 11) + 1, "101", "211", "311", "401", "411", "521", "571", "601", "701", "512", "531")
+        Case 49: PrefixFor = "401"   ' cheques de direction perimes
+        Case 50: PrefixFor = "231"   ' travaux en cours anciens
+        Case 51: PrefixFor = "471"   ' charge stockee en suspens
+        Case 52: PrefixFor = "601"   ' depense significative + remboursement perte fraude
+        Case Else: PrefixFor = Choose(((n - 53) Mod 11) + 1, "101", "211", "311", "401", "411", "521", "571", "601", "701", "512", "531")
     End Select
 End Function
 
@@ -485,6 +522,10 @@ Private Function NameFor(n As Long) As String
         Case 46: NameFor = "ECART CAISSE ATM AGENCE": Exit Function
         Case 47: NameFor = "CAISSE PRINCIPALE AGENCE": Exit Function
         Case 48: NameFor = "BANQUE BEAC COMPTE COURANT": Exit Function
+        Case 49: NameFor = "CHEQUES DE DIRECTION EN CIRCULATION": Exit Function
+        Case 50: NameFor = "TRAVAUX EN COURS AMENAGEMENT AGENCE": Exit Function
+        Case 51: NameFor = "SUSPENS DIVERS OPERATIONS": Exit Function
+        Case 52: NameFor = "CHARGES EXTERNES MOBILIER ET DIVERS": Exit Function
     End Select
     Select Case PrefixFor(n)
         Case "101": base = "CAPITAL SOCIAL"

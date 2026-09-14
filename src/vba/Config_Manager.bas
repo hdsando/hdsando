@@ -124,6 +124,20 @@ Public Type GLMonitoringConfig
     KwExpense As String
     KwAsset As String
     KwLiability As String
+    ' Points de revue du support Groupe "GL Integrity & Proof Review" (diapos 16-25)
+    MgrChequeStaleDays As Long       ' cheques de direction perimes -> non reclames
+    WipStaleDays As Long             ' travaux en cours anciens -> capitalisation
+    ExpenseMovementThreshold As Double ' mouvement de depense significatif -> autorisation
+    UnusualBalanceFactor As Double   ' solde inhabituel: x fois le solde precedent
+    UnusualBalanceMin As Double      ' ... et au moins ce montant
+    RatingPointsOther As Double
+    PrepaidGLCodes As String         ' sous-rubriques GL des charges payees d'avance (16090|16091)
+    KwMgrCheque As String
+    KwWip As String
+    KwExpenseNarration As String     ' charges reconnaissables dans une narration
+    KwFraudLoss As String
+    KwOverage As String
+    KwShortage As String
 End Type
 
 Public Type UIConfig
@@ -304,6 +318,19 @@ Private Sub SetDefaultConfiguration()
         .KwExpense = "EXPENSE|CHARGE|SALAIRE|STAFF|RENT|LOYER|DEPRECIATION|AMORTISSEMENT|OPEX|INTEREST PAID|INTERET PAYE"
         .KwAsset = "RECEIVABLE|CREANCE|DEBTOR|CLIENT|STOCK|IMMOBILISATION|BANQUE|BANK|BEAC"
         .KwLiability = "SUPPLIER|FOURNISSEUR|CHEQUE|PAYABLE|DEPOSIT|DEPOT|COLLECTION|COMPENSATION|CAPITAL"
+        .MgrChequeStaleDays = 180
+        .WipStaleDays = 180
+        .ExpenseMovementThreshold = 5000000
+        .UnusualBalanceFactor = 3
+        .UnusualBalanceMin = 1000000
+        .RatingPointsOther = 2
+        .PrepaidGLCodes = "16090|16091"
+        .KwMgrCheque = "CHEQUE DE DIRECTION|CHEQUES DE DIRECTION|MANAGER CHEQUE|MANAGERS CHEQUE|MANAGER'S CHEQUE|BANK DRAFT|CHEQUE DE BANQUE"
+        .KwWip = "WIP|TRAVAUX EN COURS|WORK IN PROGRESS|EN COURS DE CONSTRUCTION|IMMOBILISATION EN COURS|IMMOBILISATIONS EN COURS"
+        .KwExpenseNarration = "LOYER|RENT|SALAIRE|SALARY|FACTURE|INVOICE|FRAIS|FEES|ENTRETIEN|MAINTENANCE|FOURNITURE|CARBURANT|FUEL|ACHAT|PURCHASE|HONORAIRE|MISSION|HOTEL|TRANSPORT|REPARATION|REPAIR"
+        .KwFraudLoss = "FRAUDE|FRAUD|PERTE|LOSS|DETOURNEMENT|VOL "
+        .KwOverage = "OVERAGE|EXCEDENT"
+        .KwShortage = "SHORTAGE|MANQUANT|DEFICIT"
     End With
 
     ' UI
@@ -466,6 +493,20 @@ Private Sub LoadFromJSONFile(filePath As String)
             .KwExpense = ExtractJSONString(sec, "expense", .KwExpense)
             .KwAsset = ExtractJSONString(sec, "asset", .KwAsset)
             .KwLiability = ExtractJSONString(sec, "liability", .KwLiability)
+            sec = JSONSection(secM, "review_points")
+            .MgrChequeStaleDays = ExtractJSONNumber(sec, "mgr_cheque_stale_days", .MgrChequeStaleDays)
+            .WipStaleDays = ExtractJSONNumber(sec, "wip_stale_days", .WipStaleDays)
+            .ExpenseMovementThreshold = ExtractJSONNumber(sec, "expense_movement_threshold", .ExpenseMovementThreshold)
+            .UnusualBalanceFactor = ExtractJSONNumber(sec, "unusual_balance_factor", .UnusualBalanceFactor)
+            .UnusualBalanceMin = ExtractJSONNumber(sec, "unusual_balance_min", .UnusualBalanceMin)
+            .RatingPointsOther = ExtractJSONNumber(sec, "points_other", .RatingPointsOther)
+            .PrepaidGLCodes = ExtractJSONString(sec, "prepaid_gl_codes", .PrepaidGLCodes)
+            .KwMgrCheque = ExtractJSONString(sec, "mgr_cheque", .KwMgrCheque)
+            .KwWip = ExtractJSONString(sec, "wip", .KwWip)
+            .KwExpenseNarration = ExtractJSONString(sec, "expense_narration", .KwExpenseNarration)
+            .KwFraudLoss = ExtractJSONString(sec, "fraud_loss", .KwFraudLoss)
+            .KwOverage = ExtractJSONString(sec, "overage", .KwOverage)
+            .KwShortage = ExtractJSONString(sec, "shortage", .KwShortage)
         End With
     End If
 

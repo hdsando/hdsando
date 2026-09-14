@@ -106,6 +106,11 @@ Public Function RunSmokeTest() As Boolean
     Call AssertGLM("GLM-006 charge constatee d'avance non amortie", "GLM-006", Demo_Data.DemoAccounts("PREPAID"))
     Call AssertGLM("GLM-009 ecart ATM over-aged", "GLM-009", Demo_Data.DemoAccounts("CASH_DIFF"))
     Call AssertGLM("GLM-010 caisse au-dela de la limite", "GLM-010", Demo_Data.DemoAccounts("CASH_LIMIT"))
+    Call AssertGLM("GLM-013 cheques de direction perimes", "GLM-013", Demo_Data.DemoAccounts("MGR_CHEQUE"))
+    Call AssertGLM("GLM-015 mouvement de depense significatif", "GLM-015", Demo_Data.DemoAccounts("BIG_EXPENSE"))
+    Call AssertGLM("GLM-016 remboursement perte fraude", "GLM-016", Demo_Data.DemoAccounts("BIG_EXPENSE"))
+    Call AssertGLM("GLM-017 travaux en cours anciens", "GLM-017", Demo_Data.DemoAccounts("WIP"))
+    Call AssertGLM("GLM-018 charge stockee en compte d'attente", "GLM-018", Demo_Data.DemoAccounts("PARKED_EXPENSE"))
 
     ' ---- 6. Rapports ----
     Call RunStepWb("Generation rapports (Report_Generator)", "Report_Generator.GenerateFullReport")

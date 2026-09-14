@@ -30,6 +30,22 @@ S.A.F.A rapprochait des soldes (Balance ↔ GL Proof) et cherchait des patterns 
 | Forme du proof : totaux en formules, aucune ligne masquée, transactions annulées exclues, pas de copier-coller du relevé, total = solde GL | Rien | **Proof_Quality** : analyse d'un dossier de fichiers Excel → une ligne par feuille (lignes/colonnes/feuilles masquées, totaux saisis, paires annulantes, copie de relevé, écart proof/GL) | `PROOF_QUALITY` |
 | Nomenclature Finacle | Classe OHADA par premier chiffre | Préfixes devise, `PAL`, `IENC/RFI`, `INTERSOL`, classes non proofables et mots-clés paramétrables ; mode `account_normalization` = `SOL_INJECT` ou `NONE` | `settings.json`, `Config_Manager`, `Core_Engine.NormalizeBalanceAccount` |
 
+### Compléments issus du support Groupe « GL Integrity & Proof Review » (27 diapositives)
+
+| Diapositive | Point de revue | Implémentation |
+|---|---|---|
+| 3–6 | Structure du GL : actif (internes, coffres/caisses/GAB/TPE, écarts de caisse, charges payées d'avance, créances) ; passif (fournisseurs, chèques de direction, périmés et non réclamés, excédents de caisse, transit) ; revenus ; dépenses et comptes système | Classification enrichie : `MGR_CHEQUE` = passif, `WIP` = actif, excédents (overage) = passif / manquants (shortage) = actif, comptes système non proofables |
+| 7 | Revue quotidienne : débits sur revenus, extournes P&L sauf correction le jour même, attente/transit à zéro | GLM-005, GLM-004 |
+| 9 | Actifs créditeurs, passifs débiteurs, caisses hors limites, attente/transit non soldés, **soldes exceptionnels non justifiés** | GLM-003, GLM-010, GLM-004, **GLM-014** (solde ≥ 3 × période précédente et ≥ 1 M) |
+| 10 | Opérations en comptes proxy à imputer ou extourner | GLM-004 (action « identifier le compte cible, confirmer la provision, passer les écritures ») |
+| 14–15 | Comptes justifiables = tous les internes, mouvementés ou non ; exclus IENC, RFI, position FCY/LCY, transit Finnone ; liste tenue par le Comptable en chef Groupe / CFO | GLM-001, GLM-002, `PROOFABLE_LIST` |
+| 16 | Coffres au-delà des montants assurés ; **mouvements de dépenses à vérifier** | GLM-010 (`vault_limit`), **GLM-015** (dépense ≥ 5 M : régularité, autorisation, délégation) |
+| 17 | Extournes de revenus approuvées ; **remboursements de pertes liées à la fraude** ; imputations siège ; format des justificatifs ; over-aged ; **chèques de direction périmés** ; **WIP** ; **charges stockées en comptes d'attente** | GLM-005, **GLM-016** (narrations perte/fraude/détournement), GLM-011, `Proof_Quality`, GLM-009, **GLM-013** (> 180 j), **GLM-017** (> 180 j ou sans détail), **GLM-018** (narration de charge sur un compte d'attente/transit/proxy — CRITICAL) |
+| 18–19 | Attente/transit/proxy : solde nul quotidien, codes départementaux, jamais de charges, escalade | GLM-004, GLM-018, GLM-008 (codes départementaux : non disponibles dans les extractions) |
+| 20–23 | Charges payées d'avance : sous-rubriques **GL 16090–16091**, ACLPOA, autorisations, durée approuvée, amortissement linéaire, instructions permanentes | GLM-006 : détection par libellé **ou par code GL 16090/16091** ; contrôles documentaires (autorisation, durée, instruction permanente) listés dans l'action attendue |
+| 24–25 | WIP : approbation, avancement, capitalisation, délégation de pouvoir, devis/factures/reçus | GLM-017 |
+| 26 | Escalade selon nature et gravité | Gravité INFO / LOW / MEDIUM / HIGH / CRITICAL par constat, remontée HIGH/CRITICAL dans `AUDIT_REPORT` |
+
 Tout est exécuté automatiquement dans **LANCER L'ANALYSE COMPLETE** (étape « GL Monitoring ») et disponible seul via le bouton **GL Monitoring**.
 
 ## 3. Calibration automatique (plus rien à deviner)

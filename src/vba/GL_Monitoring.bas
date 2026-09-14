@@ -28,6 +28,13 @@ Option Explicit
 '   GLM-010 Limites de caisse et de coffre
 '   GLM-011 Imputations inter-agences (INTERSOL) a documenter
 '   GLM-012 Saisie manuelle sur compte automatise / systeme
+'   --- Support Groupe "GL Integrity & Proof Review" (diapos 16-25) ---
+'   GLM-013 Cheques de direction perimes a transferer en non reclames
+'   GLM-014 Soldes inhabituels / exceptionnels (vs periode precedente)
+'   GLM-015 Mouvements de depenses significatifs (regularite, autorisation)
+'   GLM-016 Remboursements de pertes liees a la fraude et narrations sensibles
+'   GLM-017 Travaux en cours (WIP) anciens: comptabilisation / capitalisation
+'   GLM-018 Charges stockees dans les comptes d'attente / transit (interdit)
 '   Feuilles: GL_MONITORING (constats), PROOFABLE_UNIVERSE (univers), GL_RATING (note)
 ' ==============================================================================
 
@@ -131,6 +138,11 @@ Public Sub Lancer_GL_Monitoring(Optional showMsg As Boolean = True)
     Call Regle_Limites(dictBal)
     Call Regle_Intersol(dictBal)
     Call Regle_SaisiesManuelles(dictBal, wsTx)
+    Call Regle_ChequesDirection(dictBal, dictGL)
+    Call Regle_SoldesInhabituels(dictBal, dictPrev)
+    Call Regle_MouvementsDepenses(dictBal, wsTx)
+    Call Regle_WIP(dictBal, dictGL)
+    Call Regle_ChargesEnAttente(dictBal, wsTx)
     Call Regle_Contreparties
 
     ' --- Mise en forme et rating ---
@@ -225,6 +237,12 @@ Public Function ClassifyAccount(acct As String, name As String, balance As Doubl
     ' 4. Nature par mots-cles (ordre: proxy, transit, suspens, prepaid, ecart, caisse)
     If ContainsAny(both, mCfg.InterbranchPrefix) Then
         r.Nature = "INTERSOL"
+    ElseIf ContainsAny(n, mCfg.KwMgrCheque) Then
+        r.Nature = "MGR_CHEQUE"
+    ElseIf ContainsAny(n, mCfg.KwWip) Then
+        r.Nature = "WIP"
+    ElseIf ContainsAny(a, mCfg.PrepaidGLCodes) Then
+        r.Nature = "PREPAID"
     ElseIf ContainsAny(both, mCfg.KwProxy) Then
         r.Nature = "PROXY"
     ElseIf ContainsAny(both, mCfg.KwTransit) Then
@@ -241,8 +259,18 @@ Public Function ClassifyAccount(acct As String, name As String, balance As Doubl
 
     ' 5. Famille
     Select Case r.Nature
-        Case "PREPAID", "CASH": r.Family = "ACTIF"
+        Case "PREPAID", "CASH", "WIP": r.Family = "ACTIF"
+        Case "MGR_CHEQUE": r.Family = "PASSIF"
         Case "TRANSIT", "PROXY", "SUSPENS", "INTERSOL": r.Family = "TIERS"
+        Case "DIFFERENCE"
+            ' Excedents de caisse (overage) = passif ; manquants (shortage) = actif
+            If ContainsAny(n, mCfg.KwOverage) Then
+                r.Family = "PASSIF"
+            ElseIf ContainsAny(n, mCfg.KwShortage) Then
+                r.Family = "ACTIF"
+            Else
+                r.Family = "TIERS"
+            End If
         Case Else
             If cls <> "" Then
                 Select Case cls
@@ -681,6 +709,146 @@ Private Sub Regle_Contreparties()
 End Sub
 
 ' ==============================================================================
+' GLM-013 : CHEQUES DE DIRECTION PERIMES
+' ==============================================================================
+
+Private Sub Regle_ChequesDirection(dictBal As Object, dictGL As Object)
+    Dim k As Variant, cls As AccountClass, name As String, bal As Double, ageMax As Double
+    For Each k In dictBal.Keys
+        name = dictBal(k)(0): bal = dictBal(k)(1)
+        cls = ClassifyAccount(CStr(k), name, bal)
+        If cls.Nature = "MGR_CHEQUE" And bal <> 0 Then
+            ageMax = 0
+            If dictGL.Exists(k) Then ageMax = dictGL(k)(3)
+            If ageMax > mCfg.MgrChequeStaleDays Then
+                Call Ecrire("GLM-013", CStr(k), name, cls, bal, ageMax, _
+                    "Cheques de direction en circulation depuis " & Format(ageMax, "0") & " jours (> " & mCfg.MgrChequeStaleDays & "): cheques perimes", _
+                    IIf(Abs(bal) > 5000000, "HIGH", "MEDIUM"), _
+                    "Transferer les cheques perimes vers le compte des elements non reclames; verifier le detail par cheque", mCfg.RatingPointsOther)
+            End If
+        End If
+    Next k
+End Sub
+
+' ==============================================================================
+' GLM-014 : SOLDES INHABITUELS / EXCEPTIONNELS (tous comptes internes)
+' ==============================================================================
+
+Private Sub Regle_SoldesInhabituels(dictBal As Object, dictPrev As Object)
+    Dim k As Variant, cls As AccountClass, name As String, cur As Double, prev As Double
+    If dictPrev.Count = 0 Then Exit Sub   ' deja signale en GLM-007
+    For Each k In dictBal.Keys
+        name = dictBal(k)(0): cur = dictBal(k)(1)
+        cls = ClassifyAccount(CStr(k), name, cur)
+        If cls.Proofable And cls.Nature <> "PL" And Abs(cur) >= mCfg.UnusualBalanceMin Then
+            If dictPrev.Exists(k) Then
+                prev = dictPrev(k)
+                If Abs(cur) >= mCfg.UnusualBalanceFactor * Abs(prev) Then
+                    Call Ecrire("GLM-014", CStr(k), name, cls, cur, 0, _
+                        "Solde inhabituel: " & Format(prev, "#,##0") & " -> " & Format(cur, "#,##0") & " (x" & IIf(prev = 0, "n/a", Format(Abs(cur) / Abs(prev), "0.0")) & ")", _
+                        IIf(Abs(cur) > 10000000, "HIGH", "MEDIUM"), _
+                        "Rapprocher avec le journal et les pieces: autorisation, approbation, authenticite, existence", mCfg.RatingPointsOther)
+                End If
+            Else
+                Call Ecrire("GLM-014", CStr(k), name, cls, cur, 0, _
+                    "Compte absent de la periode precedente avec un solde significatif", "LOW", _
+                    "Verifier l'ouverture du compte et la justification du solde", 0)
+            End If
+        End If
+    Next k
+End Sub
+
+' ==============================================================================
+' GLM-015 / GLM-016 : MOUVEMENTS DE DEPENSES ET NARRATIONS SENSIBLES
+' ==============================================================================
+
+Private Sub Regle_MouvementsDepenses(dictBal As Object, wsTx As Worksheet)
+    Dim lr As Long, i As Long, k As String, mnt As Double, narr As String, name As String
+    Dim cls As AccountClass, dictFam As Object
+    If wsTx Is Nothing Then Exit Sub
+    Set dictFam = CreateObject("Scripting.Dictionary")
+    lr = wsTx.Cells(wsTx.Rows.Count, 1).End(xlUp).Row
+    For i = 2 To lr
+        k = SAFA_Common.NormalizeAccountKey(SAFA_Common.SafeText(wsTx.Cells(i, 1).Value))
+        mnt = SAFA_Common.SafeVal(wsTx.Cells(i, 4).Value)
+        narr = UCase(SAFA_Common.SafeText(wsTx.Cells(i, 3).Value))
+        If k <> "" And mnt <> 0 Then
+            name = "": If dictBal.Exists(k) Then name = dictBal(k)(0)
+            If Not dictFam.Exists(k) Then
+                cls = ClassifyAccount(k, name, IIf(dictBal.Exists(k), dictBal(k)(1), 0))
+                dictFam(k) = cls.Family
+            End If
+            ' GLM-016: narration sensible (perte, fraude, detournement) sur tout compte
+            If ContainsAny(narr, mCfg.KwFraudLoss) Then
+                cls = ClassifyAccount(k, name, 0)
+                Call Ecrire("GLM-016", k, name, cls, mnt, 0, _
+                    "Ecriture sensible (" & Format(mnt, "#,##0") & " le " & Format(wsTx.Cells(i, 2).Value, "dd/mm/yyyy") & "): " & SAFA_Common.SafeText(wsTx.Cells(i, 3).Value, 80), _
+                    "HIGH", "Remboursement de perte / fraude: verifier l'approbation requise et le dossier", mCfg.RatingPointsOther)
+            ' GLM-015: depense significative
+            ElseIf dictFam(k) = "CHARGE" And Abs(mnt) >= mCfg.ExpenseMovementThreshold Then
+                cls = ClassifyAccount(k, name, 0)
+                Call Ecrire("GLM-015", k, name, cls, mnt, 0, _
+                    "Mouvement de depense significatif (" & Format(mnt, "#,##0") & " le " & Format(wsTx.Cells(i, 2).Value, "dd/mm/yyyy") & "): " & SAFA_Common.SafeText(wsTx.Cells(i, 3).Value, 80), _
+                    IIf(Abs(mnt) >= 2 * mCfg.ExpenseMovementThreshold, "HIGH", "MEDIUM"), _
+                    "Verifier la regularite, l'autorisation et la delegation de pouvoir de l'approbateur (limite locale / Groupe)", mCfg.RatingPointsOther)
+            End If
+        End If
+    Next i
+End Sub
+
+' ==============================================================================
+' GLM-017 : TRAVAUX EN COURS (WIP)
+' ==============================================================================
+
+Private Sub Regle_WIP(dictBal As Object, dictGL As Object)
+    Dim k As Variant, cls As AccountClass, name As String, bal As Double, ageMax As Double, nbTrans As Double
+    For Each k In dictBal.Keys
+        name = dictBal(k)(0): bal = dictBal(k)(1)
+        cls = ClassifyAccount(CStr(k), name, bal)
+        If cls.Nature = "WIP" And bal <> 0 Then
+            ageMax = 0: nbTrans = 0
+            If dictGL.Exists(k) Then ageMax = dictGL(k)(3): nbTrans = dictGL(k)(2)
+            If ageMax > mCfg.WipStaleDays Or nbTrans = 0 Then
+                Call Ecrire("GLM-017", CStr(k), name, cls, bal, ageMax, _
+                    "Travaux en cours " & IIf(nbTrans = 0, "sans detail au GL Proof", "avec des items de " & Format(ageMax, "0") & " jours") & ": comptabilisation ou capitalisation a verifier", _
+                    IIf(Abs(bal) > mCfg.ExpenseMovementThreshold, "HIGH", "MEDIUM"), _
+                    "Verifier l'approbation du projet, la delegation de pouvoir, l'avancement, la concordance approuve/comptabilise et les pieces (devis, factures, recus)", mCfg.RatingPointsOther)
+            End If
+        End If
+    Next k
+End Sub
+
+' ==============================================================================
+' GLM-018 : CHARGES STOCKEES DANS LES COMPTES D'ATTENTE / TRANSIT
+' ==============================================================================
+
+Private Sub Regle_ChargesEnAttente(dictBal As Object, wsTx As Worksheet)
+    Dim lr As Long, i As Long, k As String, mnt As Double, narr As String, name As String
+    Dim cls As AccountClass, dictNat As Object
+    If wsTx Is Nothing Then Exit Sub
+    Set dictNat = CreateObject("Scripting.Dictionary")
+    lr = wsTx.Cells(wsTx.Rows.Count, 1).End(xlUp).Row
+    For i = 2 To lr
+        k = SAFA_Common.NormalizeAccountKey(SAFA_Common.SafeText(wsTx.Cells(i, 1).Value))
+        mnt = SAFA_Common.SafeVal(wsTx.Cells(i, 4).Value)
+        narr = UCase(SAFA_Common.SafeText(wsTx.Cells(i, 3).Value))
+        If k <> "" And mnt <> 0 Then
+            name = "": If dictBal.Exists(k) Then name = dictBal(k)(0)
+            If Not dictNat.Exists(k) Then
+                cls = ClassifyAccount(k, name, IIf(dictBal.Exists(k), dictBal(k)(1), 0))
+                dictNat(k) = cls.Nature
+            End If
+            If (dictNat(k) = "SUSPENS" Or dictNat(k) = "TRANSIT" Or dictNat(k) = "PROXY") And ContainsAny(narr, mCfg.KwExpenseNarration) Then
+                cls = ClassifyAccount(k, name, 0)
+                Call Ecrire("GLM-018", k, name, cls, mnt, 0, _
+                    "Charge apparemment stockee dans un compte " & LCase(dictNat(k)) & " (" & Format(mnt, "#,##0") & " le " & Format(wsTx.Cells(i, 2).Value, "dd/mm/yyyy") & "): " & SAFA_Common.SafeText(wsTx.Cells(i, 3).Value, 80), _
+                    "CRITICAL", "Interdit: ne jamais stocker de charges en compte d'attente (preservation du resultat). Imputer en charge, verifier l'approbation", mCfg.RatingPointsOther * 2)
+            End If
+        End If
+    Next i
+End Sub
+
+' ==============================================================================
 ' RATING
 ' ==============================================================================
 
@@ -701,6 +869,12 @@ Private Sub EcrireRating()
     labels("GLM-010") = "Limites caisse / coffre"
     labels("GLM-011") = "Imputations inter-agences"
     labels("GLM-012") = "Saisies manuelles comptes automatises"
+    labels("GLM-013") = "Cheques de direction perimes"
+    labels("GLM-014") = "Soldes inhabituels / exceptionnels"
+    labels("GLM-015") = "Mouvements de depenses significatifs"
+    labels("GLM-016") = "Pertes / fraude: approbations"
+    labels("GLM-017") = "Travaux en cours (WIP)"
+    labels("GLM-018") = "Charges stockees en comptes d'attente"
 
     sol = "799"
     On Error Resume Next
@@ -828,6 +1002,19 @@ Private Sub LoadCfg()
     If mCfg.SystemPrefixes = "" Then mCfg.SystemPrefixes = "IENC|RFI|FINNONE|POSITION FCY|POSITION LCY"
     If mCfg.InterbranchPrefix = "" Then mCfg.InterbranchPrefix = "INTERSOL"
     If mCfg.AutoUserIds = "" Then mCfg.AutoUserIds = "CDCI|SYSTEM|BATCH|AUTO"
+    If mCfg.MgrChequeStaleDays <= 0 Then mCfg.MgrChequeStaleDays = 180
+    If mCfg.WipStaleDays <= 0 Then mCfg.WipStaleDays = 180
+    If mCfg.ExpenseMovementThreshold <= 0 Then mCfg.ExpenseMovementThreshold = 5000000
+    If mCfg.UnusualBalanceFactor <= 1 Then mCfg.UnusualBalanceFactor = 3
+    If mCfg.UnusualBalanceMin <= 0 Then mCfg.UnusualBalanceMin = 1000000
+    If mCfg.RatingPointsOther <= 0 Then mCfg.RatingPointsOther = 2
+    If mCfg.PrepaidGLCodes = "" Then mCfg.PrepaidGLCodes = "16090|16091"
+    If mCfg.KwMgrCheque = "" Then mCfg.KwMgrCheque = "CHEQUE DE DIRECTION|MANAGER CHEQUE|MANAGERS CHEQUE|BANK DRAFT"
+    If mCfg.KwWip = "" Then mCfg.KwWip = "WIP|TRAVAUX EN COURS|WORK IN PROGRESS|IMMOBILISATION EN COURS"
+    If mCfg.KwExpenseNarration = "" Then mCfg.KwExpenseNarration = "LOYER|RENT|SALAIRE|SALARY|FACTURE|INVOICE|FRAIS|ENTRETIEN|MAINTENANCE|FOURNITURE|CARBURANT|ACHAT|HONORAIRE"
+    If mCfg.KwFraudLoss = "" Then mCfg.KwFraudLoss = "FRAUDE|FRAUD|PERTE|LOSS|DETOURNEMENT"
+    If mCfg.KwOverage = "" Then mCfg.KwOverage = "OVERAGE|EXCEDENT"
+    If mCfg.KwShortage = "" Then mCfg.KwShortage = "SHORTAGE|MANQUANT|DEFICIT"
     mCfgLoaded = True
 End Sub
 
