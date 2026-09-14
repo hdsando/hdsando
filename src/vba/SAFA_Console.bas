@@ -739,6 +739,88 @@ Public Sub AfficherAide()
 End Sub
 
 '===============================================================================
+' CALIBRATION AUTOMATIQUE ET PARTAGE
+'===============================================================================
+
+Public Sub AfficherCalibration()
+    ' Relance la calibration sur les donnees importees et affiche la feuille CALIBRATION
+    On Error GoTo ErrHandler
+    If Not Core_Engine.FeuilleExiste("BALANCE_RAW") Or Not Core_Engine.FeuilleExiste("GLPROOF_RAW") Then
+        MsgBox "Importez d'abord la Balance et le GL Proof.", vbExclamation, "Calibration": Exit Sub
+    End If
+    Application.ScreenUpdating = False
+    Call Auto_Calibration.CalibrerNumerotation(False)
+    Application.ScreenUpdating = True
+    Call ActiverFeuille("CALIBRATION")
+    Exit Sub
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "Calibration: " & Err.Description, vbCritical, "S.A.F.A"
+End Sub
+
+Public Sub PreparerPartage()
+    ' Produit une copie distribuable du classeur: donnees effacees, configuration embarquee,
+    ' compte admin garanti, journal conserve. Le destinataire n'a besoin que d'Excel (Windows)
+    ' avec les macros activees - aucune installation ni acces VBA requis.
+    On Error GoTo ErrHandler
+    Dim dest As String, rep As Integer
+
+    rep = MsgBox("Preparer une copie de S.A.F.A a partager ?" & vbCrLf & vbCrLf & _
+                 "La copie contiendra les modules et la configuration, mais AUCUNE donnee importee" & vbCrLf & _
+                 "(Balance, GL Proof, resultats). Le classeur courant n'est pas modifie.", _
+                 vbYesNo + vbQuestion, "Preparer partage")
+    If rep = vbNo Then Exit Sub
+
+    dest = Application.GetSaveAsFilename( _
+        InitialFileName:=ThisWorkbook.Path & "\SAFA_partage_" & Format(Date, "yyyymmdd") & ".xlsm", _
+        FileFilter:="Classeur Excel avec macros (*.xlsm),*.xlsm", Title:="Enregistrer la copie a partager")
+    If dest = "False" Or dest = "" Then Exit Sub
+
+    Application.ScreenUpdating = False
+    ' 1. Sauvegarder le classeur courant tel quel
+    ThisWorkbook.Save
+    ' 2. Embarquer la configuration (feuille CONFIG_DATA) et garantir le compte admin
+    Call Config_Manager.SaveConfigurationToSheet
+    On Error Resume Next
+    Call Security_Enhanced.EnsureDefaultAdmin
+    On Error GoTo ErrHandler
+    ' 3. Copie
+    ThisWorkbook.SaveCopyAs dest
+    Application.ScreenUpdating = True
+
+    ' 4. Nettoyer la copie: l'ouvrir, effacer les donnees, refermer
+    Dim wbCopy As Workbook, ws As Worksheet, keep As Variant, k As Variant, isKeep As Boolean
+    keep = Array("MENU", "PARAM", "CONFIG_DATA", "USERS", "AUDIT_TRAIL")
+    Application.DisplayAlerts = False
+    Application.EnableEvents = False
+    Set wbCopy = Workbooks.Open(dest)
+    For Each ws In wbCopy.Worksheets
+        isKeep = False
+        For Each k In keep
+            If UCase(ws.Name) = CStr(k) Then isKeep = True
+        Next k
+        If Not isKeep And wbCopy.Worksheets.Count > 1 Then ws.Delete
+    Next ws
+    On Error Resume Next
+    wbCopy.Sheets("AUDIT_TRAIL").Rows("2:1048576").ClearContents
+    wbCopy.Sheets("MENU").Activate
+    On Error GoTo ErrHandler
+    wbCopy.Save
+    wbCopy.Close SaveChanges:=False
+    Application.EnableEvents = True
+    Application.DisplayAlerts = True
+
+    Call Core_Engine.WriteToAuditLog("SHARE", "Copie distribuable creee: " & dest)
+    MsgBox "Copie prete a partager:" & vbCrLf & dest & vbCrLf & vbCrLf & _
+           "Le destinataire ouvre le fichier, clique 'Activer le contenu', et utilise le MENU." & vbCrLf & _
+           "Compte admin initial: admin / Admin@2024! (changement obligatoire).", vbInformation, "Preparer partage"
+    Exit Sub
+ErrHandler:
+    Application.ScreenUpdating = True: Application.DisplayAlerts = True: Application.EnableEvents = True
+    MsgBox "Preparer partage: " & Err.Description, vbCritical, "S.A.F.A"
+End Sub
+
+'===============================================================================
 ' GL MONITORING (regles de la Knowledge Sharing Session DAI du 09/09/2026)
 '===============================================================================
 

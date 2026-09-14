@@ -92,7 +92,8 @@ Public Type GLMonitoringConfig
     OverAgedTier1 As Long
     OverAgedTier2 As Long
     OverAgedTier3 As Long
-    DebitPositive As Boolean
+    DebitPositive As Boolean         ' repli si SignConvention est imposee
+    SignConvention As String         ' AUTO (defaut) / DEBIT_POSITIVE / CREDIT_POSITIVE
     ' Grille de rating (a verifier avec le template CI en vigueur)
     RatingPointsPerTranche As Double
     RatingTrancheDays As Long
@@ -200,7 +201,7 @@ Private Sub SetDefaultConfiguration()
         .DefaultTolerance = 100
         .MaxRowsMemory = 500000
         .DefaultSolId = "799"
-        .AccountNormalization = "SOL_INJECT"
+        .AccountNormalization = "AUTO"
     End With
 
     ' Forensic
@@ -275,6 +276,7 @@ Private Sub SetDefaultConfiguration()
         .OverAgedTier2 = 180
         .OverAgedTier3 = 360
         .DebitPositive = True
+        .SignConvention = "AUTO"
         .RatingPointsPerTranche = 2.5
         .RatingTrancheDays = 7
         .RatingPointsProofMissing = 5
@@ -433,6 +435,7 @@ Private Sub LoadFromJSONFile(filePath As String)
             .OverAgedTier2 = ExtractJSONNumber(sec, "overaged_tier2_days", .OverAgedTier2)
             .OverAgedTier3 = ExtractJSONNumber(sec, "overaged_tier3_days", .OverAgedTier3)
             .DebitPositive = (ExtractJSONNumber(sec, "debit_positive", IIf(.DebitPositive, 1, 0)) <> 0)
+            .SignConvention = UCase(ExtractJSONString(sec, "sign_convention", .SignConvention))
             sec = JSONSection(secM, "rating")
             .RatingPointsPerTranche = ExtractJSONNumber(sec, "points_per_tranche", .RatingPointsPerTranche)
             .RatingTrancheDays = ExtractJSONNumber(sec, "tranche_days", .RatingTrancheDays)
@@ -557,6 +560,8 @@ Private Sub LoadFromConfigSheet()
             ' General / GL Monitoring
             Case "ACCOUNT_NORMALIZATION"
                 mConfig.General.AccountNormalization = UCase(CStr(paramValue))
+            Case "GLM_SIGN_CONVENTION"
+                mConfig.GLM.SignConvention = UCase(CStr(paramValue))
             Case "GLM_TRANSIT_ZERO_DAYS"
                 mConfig.GLM.TransitZeroDays = CLng(paramValue)
             Case "GLM_PREPAID_DAYS"
@@ -665,7 +670,8 @@ Public Sub SaveConfigurationToSheet()
         .Cells(rowNum, 1).Font.Bold = True
         rowNum = rowNum + 1
 
-        AddConfigRow ws, rowNum, "ACCOUNT_NORMALIZATION", mConfig.General.AccountNormalization, "SOL_INJECT ou NONE (numerotation Balance -> GL)"
+        AddConfigRow ws, rowNum, "ACCOUNT_NORMALIZATION", mConfig.General.AccountNormalization, "AUTO (calibration sur les donnees), SOL_INJECT ou NONE"
+        AddConfigRow ws, rowNum, "GLM_SIGN_CONVENTION", mConfig.GLM.SignConvention, "AUTO (detection), DEBIT_POSITIVE ou CREDIT_POSITIVE"
         AddConfigRow ws, rowNum, "GLM_TRANSIT_ZERO_DAYS", mConfig.GLM.TransitZeroDays, "Transit/proxy/suspens: solde nul sous n jours"
         AddConfigRow ws, rowNum, "GLM_PREPAID_DAYS", mConfig.GLM.PrepaidRegularizationDays, "Charges constatees d'avance: regularisation sous n jours"
         AddConfigRow ws, rowNum, "GLM_CASH_LIMIT", mConfig.GLM.CashLimit, "Limite de caisse (XAF)"

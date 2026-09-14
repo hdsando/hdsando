@@ -47,6 +47,14 @@ Public Const RISK_CRITICAL_THRESHOLD As Integer = 70
 Public Const RISK_HIGH_THRESHOLD As Integer = 50
 Public Const RISK_MEDIUM_THRESHOLD As Integer = 30
 
+' --- CALIBRATION AUTOMATIQUE (renseignee par Auto_Calibration, valable pour la session) ---
+Public g_BalanceTransform As String   ' "" (non resolu) / "NONE" / "SOL_INJECT" : transformation du numero Balance
+Public g_KeyMode As String            ' "" / "STRIP_CCY" / "DIGITS" / "SUFFIX" : reduction appliquee aux DEUX cotes
+Public g_KeySuffix As Long            ' nombre de chiffres conserves en mode SUFFIX
+Public g_FlipBalanceSign As Boolean   ' True si la Balance doit etre inversee pour cadrer avec le GL
+Public g_DebitPositiveBS As Integer   ' bilan: 1 = debit positif, -1 = credit positif, 0 = inconnu
+Public g_DebitPositivePL As Integer   ' resultat: idem
+
 ' --- LAYOUTS CANONIQUES DES FEUILLES (source de verite unique) ---
 ' RECONCIL: ecrit par Core_Engine.ConstruireRapprochement (A..N) + Advanced_AI.Finaliser_Rapport (O)
 Public Const RECONCIL_COL_COMPTE As Long = 1      ' A  AccountNumber
@@ -948,8 +956,31 @@ End Sub
 ' ==============================================================================
 
 Public Function NormalizeAccountKey(acct As String) As String
-    ' Normalise une clé de compte pour le matching
-    NormalizeAccountKey = UCase(Trim(Replace(Replace(Replace(acct, " ", ""), "'", ""), "-", "")))
+    ' Normalise une cle de compte pour le matching. Applique en plus la reduction
+    ' retenue par la calibration automatique (g_KeyMode), identique des deux cotes.
+    Dim s As String
+    s = UCase(Trim(Replace(Replace(Replace(acct, " ", ""), "'", ""), "-", "")))
+    Select Case g_KeyMode
+        Case "STRIP_CCY"
+            Do While Len(s) > 0 And Not (Left(s, 1) Like "[0-9]")
+                s = Mid(s, 2)
+            Loop
+        Case "DIGITS"
+            s = DigitsOnly(s)
+        Case "SUFFIX"
+            s = DigitsOnly(s)
+            If g_KeySuffix > 0 And Len(s) > g_KeySuffix Then s = Right(s, g_KeySuffix)
+    End Select
+    NormalizeAccountKey = s
+End Function
+
+Public Function DigitsOnly(s As String) As String
+    Dim i As Long, c As String, r As String
+    For i = 1 To Len(s)
+        c = Mid(s, i, 1)
+        If c Like "[0-9]" Then r = r & c
+    Next i
+    DigitsOnly = r
 End Function
 
 Public Function ExtractNumericPart(acct As String) As String

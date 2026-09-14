@@ -567,6 +567,7 @@ Public Sub NettoyerBalance()
         If Len(acct) > 5 And Left(acct, 1) <> "-" And InStr(1, acct, "Total", vbTextCompare) = 0 Then
 
             balValue = SafeVal(wsRaw.Cells(i, cBal).Value)
+            If SAFA_Common.g_FlipBalanceSign Then balValue = -balValue   ' calibration: convention opposee au GL
             descr = SafeText(wsRaw.Cells(i, cDesc).Value, 200)
 
             ' Exclure comptes ISO
@@ -1029,11 +1030,62 @@ Public Function NormalizeBalanceAccount(rawAcct As String, solId As String, subC
     cfg = Config_Manager.GetGeneralConfig()
     mode = UCase(Trim(cfg.AccountNormalization))
     On Error GoTo 0
+    ' AUTO (defaut): la transformation est choisie par Auto_Calibration sur les donnees
+    If mode = "" Or mode = "AUTO" Then
+        If SAFA_Common.g_BalanceTransform = "" Then Call Auto_Calibration.CalibrerNumerotation(True)
+        mode = SAFA_Common.g_BalanceTransform
+        If mode = "" Then mode = "SOL_INJECT"
+    End If
     If mode = "NONE" Then
         NormalizeBalanceAccount = Trim(rawAcct)
-    Else
+    ElseIf Len(rawAcct) >= 8 Then
         NormalizeBalanceAccount = Left(rawAcct, 3) & solId & subCode & Mid(rawAcct, 8)
+    Else
+        NormalizeBalanceAccount = Trim(rawAcct)
     End If
+End Function
+
+Public Function ScanBalanceAccounts() As Object
+    ' Numeros bruts -> solde de cloture, lus dans BALANCE_RAW avec la meme detection d'en-tete que NettoyerBalance
+    Dim d As Object, wsRaw As Worksheet, rngFound As Range
+    Dim hRow As Long, cAcct As Long, cBal As Long, lr As Long, i As Long, acct As String
+    Set d = CreateObject("Scripting.Dictionary")
+    If Not FeuilleExiste("BALANCE_RAW") Then Set ScanBalanceAccounts = d: Exit Function
+    Set wsRaw = ThisWorkbook.Sheets("BALANCE_RAW")
+    Set rngFound = FindHeaderRow(wsRaw, Array("Account Number", "Acct Num", "ACCOUNT", "Numéro Compte"))
+    If rngFound Is Nothing Then Set ScanBalanceAccounts = d: Exit Function
+    hRow = rngFound.Row: cAcct = rngFound.Column
+    cBal = FindColumnInRow(wsRaw, hRow, Array("Closing", "Solde", "Balance", "CLR_BAL_AMT"))
+    lr = wsRaw.Cells(wsRaw.Rows.count, cAcct).End(xlUp).Row
+    For i = hRow + 1 To lr
+        acct = SafeText(wsRaw.Cells(i, cAcct).Value)
+        If Len(acct) > 5 And Left(acct, 1) <> "-" And InStr(1, acct, "Total", vbTextCompare) = 0 And InStr(UCase(acct), "ISO") = 0 Then
+            If Not d.Exists(acct) Then d.Add acct, IIf(cBal > 0, SafeVal(wsRaw.Cells(i, cBal).Value), 0)
+        End If
+    Next i
+    Set ScanBalanceAccounts = d
+End Function
+
+Public Function ScanGLProofAccounts() As Object
+    ' Numeros de compte -> "Balance as per GL", lus dans GLPROOF_RAW (meme machine d'etat que NettoyerGLProof)
+    Dim d As Object, wsRaw As Worksheet, lr As Long, i As Long, rowText As String, cur As String
+    Set d = CreateObject("Scripting.Dictionary")
+    If Not FeuilleExiste("GLPROOF_RAW") Then Set ScanGLProofAccounts = d: Exit Function
+    Set wsRaw = ThisWorkbook.Sheets("GLPROOF_RAW")
+    lr = wsRaw.Cells(wsRaw.Rows.count, 1).End(xlUp).Row
+    If lr < 10 Then lr = wsRaw.Cells(wsRaw.Rows.count, 2).End(xlUp).Row
+    For i = 1 To lr
+        rowText = UCase(SafeText(wsRaw.Cells(i, 1).Value) & " " & SafeText(wsRaw.Cells(i, 2).Value) & " " & SafeText(wsRaw.Cells(i, 3).Value))
+        If InStr(rowText, "ACCOUNT NUMBER") > 0 Then
+            cur = ExtractAccountNumber(wsRaw, i)
+            If cur <> "" Then
+                If Not d.Exists(cur) Then d.Add cur, 0
+            End If
+        ElseIf InStr(rowText, "BALANCE AS PER GL") > 0 And cur <> "" Then
+            If d.Exists(cur) Then d(cur) = TrouverMontantSurLigne(wsRaw, i)
+        End If
+    Next i
+    Set ScanGLProofAccounts = d
 End Function
 
 Private Function NormalizeAccountKey(acct As String) As String
@@ -1187,6 +1239,13 @@ Public Sub Lancer_Traitement_Complet()
 
     Call InitializeErrorLog
     Call WriteToAuditLog("PROCESS", "Traitement complet démarré")
+
+    ' Étape 0: Calibration automatique (numerotation Balance/GL, signe) sur les donnees
+    Call UpdateProgress("Calibration automatique...", 5)
+    On Error Resume Next
+    Call Auto_Calibration.CalibrerNumerotation(True)
+    If Err.Number <> 0 Then Call WriteToAuditLog("ERROR", "Calibration: " & Err.Description)
+    On Error GoTo TraitementError
 
     ' Étape 1: Nettoyage des données
     Call UpdateProgress("Nettoyage Balance...", 10)

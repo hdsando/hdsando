@@ -25,6 +25,14 @@ Détails, installation manuelle et dépannage : [`install/README_INSTALL.md`](in
 
 Un mode console (menus texte) reste disponible : `SAFA_Console.Demarrer`.
 
+## Calibration automatique
+
+L'analyse commence par une calibration sur vos fichiers (feuille `CALIBRATION`) : choix de la transformation de numéro Balance ↔ GL Proof qui rapproche le plus de comptes, détection d'une éventuelle inversion de signe de la Balance, et détection de la convention débit/crédit (bilan et résultat séparément). Rien à paramétrer ; les modes restent imposables dans `config/settings.json` (`account_normalization`, `sign_convention`).
+
+## Partager l'outil
+
+Le bouton **Préparer partage** crée une copie `SAFA_partage_AAAAMMJJ.xlsm` sans données importées, avec la configuration embarquée (`CONFIG_DATA`) et le compte `admin` initial. Le destinataire a besoin d'**Excel pour Windows** (2016+) avec les macros activées (« Activer le contenu ») — **aucune installation, aucun accès VBA** requis. Le fichier est autonome : `config/settings.json` est facultatif (la feuille `CONFIG_DATA` prend le relais). Excel pour Mac n'est pas supporté (objets `Scripting.Dictionary`, ADODB et .NET absents).
+
 ## Feuilles produites
 
 | Feuille | Contenu | Module |

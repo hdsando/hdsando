@@ -117,6 +117,9 @@ Public Sub Lancer_GL_Monitoring(Optional showMsg As Boolean = True)
     Set dictCI = LoadKeyList("PROOFABLE_LIST")
     Set dictPrev = LoadPreviousBalance()
 
+    ' Conventions debit/credit detectees sur les donnees (ou imposees par la configuration)
+    Call Auto_Calibration.CalibrerSignes(dictBal, True)
+
     ' --- Regles ---
     Call ConstruireUnivers(dictBal, dictGL, dictCI)
     Call Regle_Sens(dictBal)
@@ -190,8 +193,13 @@ Public Function ClassifyAccount(acct As String, name As String, balance As Doubl
     ' 2. Comptes de resultat: prefixe PAL (Finacle) ou classes 6 / 7 (OHADA)
     If (Len(mCfg.PLPrefix) > 0 And InStr(a, UCase(mCfg.PLPrefix)) > 0) Then
         r.Nature = "PL": r.Proofable = False
-        ' Convention Finacle: montant negatif = charge, sans signe = produit
-        r.Family = IIf(balance < 0, "CHARGE", "PRODUIT")
+        ' Famille par le signe selon la convention detectee pour le resultat
+        ' (Finacle PAL par defaut: montant negatif = charge, sans signe = produit)
+        If PLDebitPositive() Then
+            r.Family = IIf(balance < 0, "PRODUIT", "CHARGE")
+        Else
+            r.Family = IIf(balance < 0, "CHARGE", "PRODUIT")
+        End If
         If ContainsAny(n, mCfg.KwRevenue) Then r.Family = "PRODUIT"
         If ContainsAny(n, mCfg.KwExpense) Then r.Family = "CHARGE"
         r.Reason = "Compte de resultat (PAL): non proofable"
@@ -355,12 +363,17 @@ Private Sub Regle_Sens(dictBal As Object)
         name = dictBal(k)(0): bal = dictBal(k)(1)
         If bal <> 0 Then
             cls = ClassifyAccount(CStr(k), name, bal)
-            sgn = IIf(mCfg.DebitPositive, bal, -bal)   ' sgn > 0 = debiteur
+            ' sgn > 0 = debiteur, selon la convention detectee pour la famille (bilan ou resultat)
+            If cls.Family = "CHARGE" Or cls.Family = "PRODUIT" Then
+                sgn = IIf(PLDebitPositive(), bal, -bal)
+            Else
+                sgn = IIf(BSDebitPositive(), bal, -bal)
+            End If
             constat = ""
             If cls.Nature = "PL" And InStr(UCase(k), UCase(mCfg.PLPrefix)) > 0 Then
-                ' Convention Finacle PAL: negatif = charge, positif = produit; verifier par libelle
-                If ContainsAny(name, mCfg.KwRevenue) And bal < 0 Then constat = "Compte de produit a solde negatif (charge ?)"
-                If ContainsAny(name, mCfg.KwExpense) And bal > 0 Then constat = "Compte de charge a solde positif (produit ?)"
+                ' Comptes PAL: la famille est deduite du signe; on ne verifie que par le libelle
+                If ContainsAny(name, mCfg.KwRevenue) And sgn > 0 Then constat = "Compte de produit a solde DEBITEUR"
+                If ContainsAny(name, mCfg.KwExpense) And sgn < 0 Then constat = "Compte de charge a solde CREDITEUR"
             Else
                 Select Case cls.Family
                     Case "ACTIF": If sgn < 0 Then constat = "Compte d'actif a solde CREDITEUR"
@@ -817,6 +830,16 @@ Private Sub LoadCfg()
     If mCfg.AutoUserIds = "" Then mCfg.AutoUserIds = "CDCI|SYSTEM|BATCH|AUTO"
     mCfgLoaded = True
 End Sub
+
+Private Function BSDebitPositive() As Boolean
+    ' Convention du bilan: detectee (Auto_Calibration) sinon debit positif
+    BSDebitPositive = (SAFA_Common.g_DebitPositiveBS >= 0)
+End Function
+
+Private Function PLDebitPositive() As Boolean
+    ' Convention du resultat: detectee sinon convention Finacle PAL (credit positif)
+    If SAFA_Common.g_DebitPositivePL = 0 Then PLDebitPositive = False Else PLDebitPositive = (SAFA_Common.g_DebitPositivePL > 0)
+End Function
 
 Public Function ContainsAny(text As String, pipeList As String) As Boolean
     Dim t As Variant

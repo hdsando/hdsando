@@ -135,6 +135,8 @@ Public Sub BuildMenu()
     Call AddButton(ws, "btnTrail", "Journal d'audit", "D29", 2, CLR_GREY, "SAFA_Console.OuvrirJournalAudit")
     Call AddButton(ws, "btnHelp", "Aide", "F29", 2, CLR_GREY, "SAFA_Console.AfficherAide")
     Call AddButton(ws, "btnConsole", "Mode console", "H29", 2, CLR_GREY, "SAFA_Console.Demarrer")
+    Call AddButton(ws, "btnShare", "Preparer partage", "J29", 2, CLR_NAVY, "SAFA_Console.PreparerPartage")
+    Call AddButton(ws, "btnCalib", "Calibration", "J25", 2, CLR_BLUE, "SAFA_Console.AfficherCalibration")
 
     ws.Range("B32").Value = "Astuce: le bouton Tests auto charge des donnees demo, execute tout le pipeline et verifie chaque detecteur. GL Monitoring: regles de la seance DAI du 09/09/2026."
     ws.Range("B32").Font.Size = 9: ws.Range("B32").Font.Color = RGB(120, 120, 120)

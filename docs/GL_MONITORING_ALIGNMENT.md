@@ -32,11 +32,20 @@ S.A.F.A rapprochait des soldes (Balance ↔ GL Proof) et cherchait des patterns 
 
 Tout est exécuté automatiquement dans **LANCER L'ANALYSE COMPLETE** (étape « GL Monitoring ») et disponible seul via le bouton **GL Monitoring**.
 
-## 3. À vérifier lundi sur les vraies extractions (bloquant)
+## 3. Calibration automatique (plus rien à deviner)
 
-1. **Format du « Consolidated GL Balance Report »** : colonnes exactes (numéro de compte, libellé, solde), lignes de titre, séparateurs de milliers, signe des crédits (`Cr`/négatif/parenthèses). Le parseur cherche `Account Number / Acct Num / ACCOUNT / Compte` et `Closing / Solde / Balance / CLR_BAL`.
-2. **Correspondance des numéros Balance ↔ GL Proof** : si les deux rapports utilisent déjà le même numéro complet (`XAF705…`), mettre `account_normalization` à `NONE` dans `config/settings.json` (ou `ACCOUNT_NORMALIZATION` dans `CONFIG_DATA`). Sinon adapter `Core_Engine.NormalizeBalanceAccount`.
-3. **Convention de signe** des soldes dans l'extraction (débit positif ?) → `debit_positive`. Pour les comptes `PAL`, la convention citée en séance (négatif = charge) est codée.
+Depuis la v10.2, l'analyse complète commence par une **calibration sur les données** (`Auto_Calibration`, feuille `CALIBRATION`) :
+
+- **Numérotation Balance ↔ GL Proof** : huit transformations candidates sont évaluées (identique, injection SOL, suppression du code devise, chiffres seuls, suffixe de 12/10/8/6 chiffres) ; celle qui rapproche le plus de comptes **sans collision** est retenue et affichée avec son taux. Un taux < 50 % est signalé en rouge : c'est le signal qu'un des deux fichiers n'est pas celui attendu.
+- **Signe de la Balance** : si `|GL + Balance|` cadre sur plus de comptes que `|GL − Balance|`, la Balance est inversée automatiquement (signalé en `B5`).
+- **Convention débit/crédit** : vote majoritaire (≥ 60 %) sur les comptes dont la famille est connue par la classe ou le libellé, **séparément pour le bilan et le résultat** (les extractions Finacle présentent souvent le PAL en crédit positif). À défaut de preuve : bilan débit positif, résultat en convention PAL de la séance (négatif = charge).
+
+Les modes restent imposables si nécessaire (`account_normalization`, `sign_convention` dans `settings.json` ou `CONFIG_DATA`).
+
+Reste à vérifier sur les vraies extractions :
+
+1. **Format du « Consolidated GL Balance Report »** : le parseur cherche l'en-tête `Account Number / Acct Num / ACCOUNT / Compte` et `Closing / Solde / Balance / CLR_BAL` dans les 50 premières lignes ; si l'export utilise d'autres libellés, me les communiquer.
+2. **Lecture de la feuille `CALIBRATION`** après la première analyse : le mode retenu et son taux doivent être cohérents avec ce que vous savez des fichiers.
 4. **Liste CI des comptes proofables** (par agence) : à importer (colonne A = numéro) pour activer l'exhaustivité GLM-001.
 5. **Grille de rating** : « 5 points pour chaque 2 jours » entendu en séance vs 2,5 points par tranche de 7 jours (grille révisée du 28/02/2026) → à confirmer sur le template en vigueur, puis ajuster `points_per_tranche` / `tranche_days`.
 6. **Extrait du journal avec identifiant du posteur et contrepartie** : sans lui, GLM-008 et GLM-012 restent des rappels de procédure.

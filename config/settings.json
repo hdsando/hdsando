@@ -11,7 +11,7 @@
     "default_tolerance": 100,
     "max_rows_memory": 500000,
     "default_sol_id": "799",
-    "account_normalization": "SOL_INJECT"
+    "account_normalization": "AUTO"
   },
 
   "currencies": {
@@ -140,7 +140,8 @@
       "overaged_tier1_days": 90,
       "overaged_tier2_days": 180,
       "overaged_tier3_days": 360,
-      "debit_positive": 1
+      "debit_positive": 1,
+      "sign_convention": "AUTO"
     },
     "rating": {
       "_note": "Grille a verifier avec le template CI en vigueur (grille revisee du 28/02/2026: 2,5 pts par tranche de 7 jours)",

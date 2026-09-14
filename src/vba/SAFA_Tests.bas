@@ -64,6 +64,13 @@ Public Function RunSmokeTest() As Boolean
     Call AssertSheetHasRows("TRANSACTION_DATA genere", "TRANSACTION_DATA", 50)
     Call AssertSheetHasRows("AUDIT_REPORT contient des alertes", "AUDIT_REPORT", 1)
 
+    ' ---- 2b. Calibration automatique ----
+    Call AssertSheetExists("CALIBRATION cree", "CALIBRATION")
+    Call AssertCellEquals("Numerotation detectee = SOL_INJECT (demo)", "CALIBRATION", "B3", "SOL_INJECT")
+    Call AssertCellStarts("Convention bilan detectee = DEBIT_POSITIVE (demo)", "CALIBRATION", "B6", "DEBIT_POSITIVE")
+    Call AssertCellStarts("Convention resultat detectee = DEBIT_POSITIVE (demo OHADA)", "CALIBRATION", "B7", "DEBIT_POSITIVE")
+    Call AssertCellStarts("Pas d'inversion de signe (demo)", "CALIBRATION", "B5", "NON")
+
     ' ---- 3. Rapprochement: comptes a ecart injectes ----
     Call AssertReconcilStatus("Ecarts injectes detectes (statut 'Ecart a analyser')", _
                               Demo_Data.DemoAccounts("ECART"), SAFA_Common.RECONCIL_STATUT_ECART)
@@ -298,6 +305,20 @@ Private Sub AssertAlertForAccounts(name As String, accounts As Variant)
         If hit Then Exit For
     Next i
     Call Record(name, "Alerte sur compte injecte", IIf(hit, "Alerte trouvee (ligne " & i & ")", "AUCUNE alerte"), hit)
+End Sub
+
+Private Sub AssertCellEquals(name As String, sheetName As String, addr As String, expected As String)
+    Dim v As String
+    If Not SAFA_Common.FeuilleExiste(sheetName) Then Call Record(name, expected, "Feuille absente", False): Exit Sub
+    v = SAFA_Common.SafeText(ThisWorkbook.Sheets(sheetName).Range(addr).Value)
+    Call Record(name, expected, v, (UCase(v) = UCase(expected)))
+End Sub
+
+Private Sub AssertCellStarts(name As String, sheetName As String, addr As String, expectedPrefix As String)
+    Dim v As String
+    If Not SAFA_Common.FeuilleExiste(sheetName) Then Call Record(name, expectedPrefix, "Feuille absente", False): Exit Sub
+    v = SAFA_Common.SafeText(ThisWorkbook.Sheets(sheetName).Range(addr).Value)
+    Call Record(name, expectedPrefix & "...", v, (Left(UCase(v), Len(expectedPrefix)) = UCase(expectedPrefix)))
 End Sub
 
 Private Sub AssertGLM(name As String, rule As String, accounts As Variant)
