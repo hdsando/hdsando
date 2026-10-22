@@ -1,41 +1,52 @@
 # Hyacinthe Djanan Sando
 
-**Financial audit · Risk analytics · Audit automation**
+**Banking internal audit · Data analytics · Applied research**
 
-I work on tools that help turn financial records into traceable audit findings. This GitHub profile brings together my public work on reconciliation, anomaly analysis and financial controls.
+I am a banking internal auditor working on digital audit, financial and non-financial risks, and the use of data analytics in audit decisions. I combine banking practice with research on fraud detection and teaching in digital finance.
 
-[Explore S.A.F.A.](docs/SAFA.md) · [Source code](src/vba/) · [Validation plan](docs/VALIDATION.md)
+[Research](#research) · [S.A.F.A.](docs/SAFA.md) · [Professional background](docs/PROFILE.md) · [LinkedIn](https://www.linkedin.com/in/hyacinthe-djanan-sando/)
 
-## Featured work
+## Research
+
+Co-author of **[Data analytics-based auditing: a case study of fraud detection in the banking context](https://doi.org/10.1007/s10479-024-06129-8)**, published in *Annals of Operations Research*, **340**, 1161–1188 (2024).
+
+The study examines data analytics for banking audit decisions and fraud detection.
+
+[University of Bristol publication record and manuscript access](https://research-information.bris.ac.uk/en/publications/data-analytics-based-auditing-a-case-study-of-fraud-detection-in-/) · [BibTeX citation](docs/publications.bib)
+
+## Practice and teaching
+
+- **UBA Chad — Internal audit**, since September 2025: banking processes, information systems audit, internal controls and Power BI reporting.
+- **Afriland First Bank Cameroon — Internal auditor, then Junior Audit Engagement Lead**, March 2021–August 2025: digital audit design, audit analytics, GRC tools and team supervision.
+- **Catholic University of Central Africa (UCAC) — Adjunct lecturer in digital finance**, since 2024.
+
+My academic background includes a master's degree in Audit and Control and a bachelor's degree in Economics from UCAC.
+
+## Featured project
 
 ### S.A.F.A. — System for Automated Financial Audit
 
 An Excel/VBA project for financial audit workflows, with source modules covering data ingestion, reconciliation, statistical anomaly analysis and reporting.
 
-| Explore | What you will find |
+[Project overview](docs/SAFA.md) · [VBA source](src/vba/) · [Configuration](config/) · [Validation plan](docs/VALIDATION.md)
+
+**Status:** source code and design documentation are available. A packaged Excel workbook and a reproducible benchmark remain to be published. Runtime behaviour and security require further validation.
+
+## Skills and working environment
+
+| Area | Tools and methods |
 | --- | --- |
-| [Project overview](docs/SAFA.md) | Scope, repository structure and current limitations |
-| [VBA modules](src/vba/) | The implementation available for inspection |
-| [Configuration](config/) | Settings and keyword dictionaries |
-| [Product specification](docs/PRD.md) | Design requirements; these are not proof of validated behaviour |
-| [Validation plan](docs/VALIDATION.md) | Proposed checks and evidence needed for a reproducible demonstration |
-
-**Current status:** source code and design documentation are available. This repository does not yet include a packaged Excel workbook or a reproducible benchmark. Runtime behaviour and security require further validation.
-
-## Technical focus
-
-- Reconciliation of financial records and investigation of exceptions.
-- Statistical indicators to help prioritise audit work.
-- Traceable reporting and explicit validation of analytical rules.
-
-The published implementation uses Excel/VBA and JSON configuration. A statistical flag is a prompt for investigation; it does not establish fraud.
+| Data analysis and reporting | Power BI, Python, SQL, Excel/VBA |
+| Banking systems and GRC | Finacle, Amplitude UP, HOPEX V5 |
+| Audit methods | Risk-based audit, continuous auditing and monitoring, IT general controls |
+| Internal control and risk | COSO, IIA standards, ICFR; experience in the CEMAC banking environment |
 
 ## En français
 
-Je développe des outils pour rendre l'analyse des données financières et les constats d'audit plus traçables. Mon projet public principal, **S.A.F.A.**, rassemble des modules Excel/VBA de rapprochement, d'analyse d'anomalies et de reporting.
+Auditeur interne bancaire, je travaille sur la transformation digitale de l'audit, l'analyse des données et les risques financiers et non financiers. Mon parcours associe la pratique bancaire, la recherche appliquée sur la détection de fraude et l'enseignement de la finance digitale à l'UCAC.
 
-La [présentation du projet](docs/SAFA.md) distingue le code disponible, les objectifs documentés et les validations à réaliser.
+Sur GitHub, je présente les sources de **S.A.F.A.** et les éléments nécessaires pour en examiner le fonctionnement. Un indicateur d'anomalie aide à orienter une investigation ; il ne constitue pas, à lui seul, une preuve de fraude.
 
 ## Discuss the work
 
-For a reproducible bug report, a methodological question or a suggested improvement, [open an issue](https://github.com/hdsando/hdsando/issues). See the [contribution guide](CONTRIBUTING.md) for the information to include.
+For methodological questions or professional exchanges, connect on [LinkedIn](https://www.linkedin.com/in/hyacinthe-djanan-sando/). For reproducible bug reports and project suggestions, [open an issue](https://github.com/hdsando/hdsando/issues) and see the [contribution guide](CONTRIBUTING.md).
