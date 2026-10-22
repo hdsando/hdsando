@@ -4,7 +4,22 @@
 
 I am a banking internal auditor working on digital audit, financial and non-financial risks, and the use of data analytics in audit decisions. I combine banking practice with research on fraud detection and teaching in digital finance.
 
-[Research](#research) · [S.A.F.A.](docs/SAFA.md) · [Professional background](docs/PROFILE.md) · [LinkedIn](https://www.linkedin.com/in/hyacinthe-djanan-sando/)
+[Projects](#projects) · [Research](#research) · [S.A.F.A.](docs/SAFA.md) · [Professional background](docs/PROFILE.md) · [LinkedIn](https://www.linkedin.com/in/hyacinthe-djanan-sando/)
+
+## Projects
+
+My projects connect financial analysis, audit practice, learning and digital product design.
+
+| Project | Focus | Availability |
+| --- | --- | --- |
+| **[S.A.F.A.](docs/SAFA.md)** | Financial audit automation, reconciliation and anomaly analysis | Public source |
+| **[FINLIFE](docs/PROJECTS.md#finlife)** | Personal finance and budgeting for African users | Private development |
+| **[KILIMA](docs/PROJECTS.md#kilima)** | Applied research on financial inclusion and explainable decision support | Private prototype |
+| **[illimna](docs/PROJECTS.md#illimna)** | Interactive learning and project management exam preparation in French | Private development |
+| **[Siéra Studio](docs/PROJECTS.md#siera-studio)** | A digital showcase for graphic design services and brand identity | Private development |
+| **[Proactive GRC](https://github.com/hdsando/proactive-grc)** | Governance, risk and compliance project workspace | Initial scoping |
+
+[Explore the project portfolio](docs/PROJECTS.md). Private projects are described at a general level; their source repositories remain private.
 
 ## Research
 
@@ -22,9 +37,7 @@ The study examines data analytics for banking audit decisions and fraud detectio
 
 My academic background includes a master's degree in Audit and Control and a bachelor's degree in Economics from UCAC.
 
-## Featured project
-
-### S.A.F.A. — System for Automated Financial Audit
+## S.A.F.A. — System for Automated Financial Audit
 
 An Excel/VBA project for financial audit workflows, with source modules covering data ingestion, reconciliation, statistical anomaly analysis and reporting.
 
